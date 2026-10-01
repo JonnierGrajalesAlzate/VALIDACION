@@ -1,0 +1,8 @@
+node_modules/
+.env
+.env.*
+!.env.example
+backend/logs/*.log
+frontend/dist/
+coverage/
+backend/tests/.tmp/

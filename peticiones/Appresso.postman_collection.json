@@ -1,0 +1,429 @@
+{
+  "info": {
+    "name": "Appresso — Detección de anomalías",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "API local de Appresso. Requiere el backend corriendo (cd backend && npm start). La variable baseUrl apunta a http://localhost:3000."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Enviar datos del docente",
+      "item": [
+        {
+          "name": "Enviar UNA transacción",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/transacciones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transacciones"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idTxn\": 10001,\n  \"user\": \"aa@aa.com\",\n  \"date\": \"2026-09-23T10:30:01.120\",\n  \"value\": 50000,\n  \"paymentMethod\": \"Tarjeta\",\n  \"hash\": \"PEGUE_AQUI_EL_HASH\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Pegue en Body el objeto JSON que envía el docente. Respuestas: 201 aceptada, 422 validación/hash, 409 duplicado, 400 JSON malformado."
+          }
+        },
+        {
+          "name": "Enviar LOTE de transacciones",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/transacciones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transacciones"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  {\n    \"idTxn\": 10001,\n    \"user\": \"aa@aa.com\",\n    \"date\": \"2026-09-23T10:30:01.120\",\n    \"value\": 50000,\n    \"paymentMethod\": \"Tarjeta\",\n    \"hash\": \"PEGUE_AQUI_EL_HASH\"\n  },\n  {\n    \"idTxn\": 10002,\n    \"user\": \"aa@aa.com\",\n    \"date\": \"2026-09-23T10:30:01.120\",\n    \"value\": 50000,\n    \"paymentMethod\": \"Tarjeta\",\n    \"hash\": \"PEGUE_AQUI_EL_HASH\"\n  }\n]",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Pegue en Body el arreglo [ ... ] del docente. Si hay válidas e inválidas responde 207 con \"aceptadas\" y \"rechazadas\" (cada una con su motivo)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Consultar resultados",
+      "item": [
+        {
+          "name": "Transacciones",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transacciones?limite=50&pagina=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transacciones"
+              ],
+              "query": [
+                {
+                  "key": "limite",
+                  "value": "50"
+                },
+                {
+                  "key": "pagina",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Transacciones anómalas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transacciones?estado=ANOMALA",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transacciones"
+              ],
+              "query": [
+                {
+                  "key": "estado",
+                  "value": "ANOMALA"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Anomalías",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/anomalias",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "anomalias"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Detalle de una anomalía (línea de tiempo)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/anomalias/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "anomalias",
+                "1"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Usuarios con conteos",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/usuarios",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "usuarios"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Estadísticas del dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/estadisticas",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "estadisticas"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Salud del servidor y PostgreSQL",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Administración",
+      "item": [
+        {
+          "name": "Inactivar usuario",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/usuarios/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "usuarios",
+                "1"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"INACTIVO\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Activar usuario",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/usuarios/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "usuarios",
+                "1"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estado\": \"ACTIVO\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Eliminar transacción",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transacciones/10001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transacciones",
+                "10001"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Ver configuración",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/config",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "config"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Herramientas de prueba (solo NODE_ENV=development)",
+      "item": [
+        {
+          "name": "Calcular hash de una transacción",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dev/calcular-hash",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dev",
+                "calcular-hash"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idTxn\": 10001,\n  \"user\": \"aa@aa.com\",\n  \"date\": \"2026-09-23T10:30:01.120\",\n  \"value\": 50000,\n  \"paymentMethod\": \"Tarjeta\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Devuelve el hash correcto con el HMAC_SECRET del .env, para armar pruebas propias."
+          }
+        },
+        {
+          "name": "Error: tipo incorrecto (value string)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/transacciones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transacciones"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idTxn\": 10001,\n  \"user\": \"aa@aa.com\",\n  \"date\": \"2026-09-23T10:30:01.120\",\n  \"value\": \"50000\",\n  \"paymentMethod\": \"Tarjeta\",\n  \"hash\": \"PEGUE_AQUI_EL_HASH\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Error: JSON malformado",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/transacciones",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transacciones"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{ \"idTxn\": 10001, \"user\": \"aa@aa.com\", }",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

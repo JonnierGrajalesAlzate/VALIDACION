@@ -1,0 +1,237 @@
+###############################################################################
+# Appresso — colección de peticiones de ejemplo
+# Uso: extensión "REST Client" de VS Code (humao.rest-client) → clic en
+# "Send Request" sobre cada petición. Requiere el backend en NODE_ENV=development
+# para las peticiones que calculan el hash con /api/dev/calcular-hash.
+#
+# Truco: las peticiones con "# @name" guardan su respuesta; las siguientes
+# usan {{nombre.response.body.$.campo}} para reutilizar el hash calculado.
+# Cambie los idTxn si ya existen (o bórrelos con DELETE).
+###############################################################################
+
+@api = http://localhost:3000/api
+
+### Salud del servidor y de PostgreSQL
+GET {{api}}/health
+
+### Configuración vigente (ventana, umbral, franjas...)
+GET {{api}}/config
+
+###############################################################################
+# 1. Transacción válida (primero se calcula el hash)
+###############################################################################
+
+# @name hashValida
+POST {{api}}/dev/calcular-hash
+Content-Type: application/json
+
+{ "idTxn": 10001, "user": "aa@aa.com", "date": "2026-09-23T10:30:01.120", "value": 50000, "paymentMethod": "Tarjeta" }
+
+### Enviar con el hash calculado → 201
+POST {{api}}/transacciones
+Content-Type: application/json
+
+{ "idTxn": 10001, "user": "aa@aa.com", "date": "2026-09-23T10:30:01.120", "value": 50000, "paymentMethod": "Tarjeta", "hash": "{{hashValida.response.body.$.hash}}" }
+
+### Repetir el mismo idTxn → 409 DUPLICADO
+POST {{api}}/transacciones
+Content-Type: application/json
+
+{ "idTxn": 10001, "user": "aa@aa.com", "date": "2026-09-23T10:30:01.120", "value": 50000, "paymentMethod": "Tarjeta", "hash": "{{hashValida.response.body.$.hash}}" }
+
+###############################################################################
+# 2. Caso de uso 1 — b@b.com 10:00:01, :02, :03 → ANOMALÍA en la tercera
+###############################################################################
+
+# @name caso1
+POST {{api}}/dev/calcular-hash
+Content-Type: application/json
+
+[
+  { "idTxn": 20001, "user": "b@b.com", "date": "2026-09-23T10:00:01", "value": 9500, "paymentMethod": "Nequi" },
+  { "idTxn": 20002, "user": "b@b.com", "date": "2026-09-23T10:00:02", "value": 9500, "paymentMethod": "Nequi" },
+  { "idTxn": 20003, "user": "b@b.com", "date": "2026-09-23T10:00:03", "value": 9500, "paymentMethod": "Nequi" }
+]
+
+### Enviar el lote del caso 1 → 201, resumen.anomalias = 1
+POST {{api}}/transacciones
+Content-Type: application/json
+
+[
+  {{caso1.response.body.$.resultados[0].transaccion}},
+  {{caso1.response.body.$.resultados[1].transaccion}},
+  {{caso1.response.body.$.resultados[2].transaccion}}
+]
+
+###############################################################################
+# 3. Caso de uso 2 — c@c.com 10:00:01, 10:00:10, 10:01:20 → NORMAL
+###############################################################################
+
+# @name caso2
+POST {{api}}/dev/calcular-hash
+Content-Type: application/json
+
+[
+  { "idTxn": 20011, "user": "c@c.com", "date": "2026-09-23T10:00:01", "value": 6000, "paymentMethod": "Tarjeta" },
+  { "idTxn": 20012, "user": "c@c.com", "date": "2026-09-23T10:00:10", "value": 6000, "paymentMethod": "Tarjeta" },
+  { "idTxn": 20013, "user": "c@c.com", "date": "2026-09-23T10:01:20", "value": 6000, "paymentMethod": "Tarjeta" }
+]
+
+###
+POST {{api}}/transacciones
+Content-Type: application/json
+
+[
+  {{caso2.response.body.$.resultados[0].transaccion}},
+  {{caso2.response.body.$.resultados[1].transaccion}},
+  {{caso2.response.body.$.resultados[2].transaccion}}
+]
+
+###############################################################################
+# 4. Caso de uso 3 — tres usuarios distintos → NORMAL
+###############################################################################
+
+# @name caso3
+POST {{api}}/dev/calcular-hash
+Content-Type: application/json
+
+[
+  { "idTxn": 20021, "user": "d@d.com", "date": "2026-09-23T10:00:01", "value": 7800, "paymentMethod": "Efectivo" },
+  { "idTxn": 20022, "user": "e@e.com", "date": "2026-09-23T10:00:02", "value": 7800, "paymentMethod": "Efectivo" },
+  { "idTxn": 20023, "user": "f@f.com", "date": "2026-09-23T10:00:03", "value": 7800, "paymentMethod": "Efectivo" }
+]
+
+###
+POST {{api}}/transacciones
+Content-Type: application/json
+
+[
+  {{caso3.response.body.$.resultados[0].transaccion}},
+  {{caso3.response.body.$.resultados[1].transaccion}},
+  {{caso3.response.body.$.resultados[2].transaccion}}
+]
+
+###############################################################################
+# 5. Errores (cada uno debe explicar QUÉ falló y en qué ETAPA)
+###############################################################################
+
+### Tipo incorrecto: value como string → 422 VALIDACION_ESQUEMA / TIPO_INVALIDO
+POST {{api}}/transacciones
+Content-Type: application/json
+
+{ "idTxn": 30001, "user": "aa@aa.com", "date": "2026-09-23T10:30:01.120", "value": "50000", "paymentMethod": "Tarjeta", "hash": "{{hashValida.response.body.$.hash}}" }
+
+### Varios errores juntos (faltante, extra, correo, fecha imposible, negativo, método)
+POST {{api}}/transacciones
+Content-Type: application/json
+
+{ "idTxn": "30002", "user": "correo-malo", "date": "2026-02-30T10:00:00", "value": -5, "paymentMethod": "Bitcoin", "descuento": 10 }
+
+### Hash inválido → 422 VALIDACION_HASH / HASH_INVALIDO
+POST {{api}}/transacciones
+Content-Type: application/json
+
+{ "idTxn": 30003, "user": "aa@aa.com", "date": "2026-09-23T10:30:01.120", "value": 50000, "paymentMethod": "Tarjeta", "hash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" }
+
+### JSON malformado (coma sobrante) → 400 PARSEO_JSON con línea y columna
+POST {{api}}/transacciones
+Content-Type: application/json
+
+{ "idTxn": 30004, "user": "aa@aa.com", }
+
+### Lote vacío → 422
+POST {{api}}/transacciones
+Content-Type: application/json
+
+[]
+
+### Lote mixto → 207 (una válida del caso 1 ya existe: duplicado; otra con tipo malo)
+POST {{api}}/transacciones
+Content-Type: application/json
+
+[
+  {{caso1.response.body.$.resultados[0].transaccion}},
+  { "idTxn": 30005, "user": "aa@aa.com", "date": "2026-09-23T10:30:01.120", "value": "1", "paymentMethod": "Tarjeta", "hash": "{{hashValida.response.body.$.hash}}" }
+]
+
+###############################################################################
+# 6. Consultas
+###############################################################################
+
+### Transacciones con filtros
+GET {{api}}/transacciones?usuario=b@b.com&estado=ANOMALA&desde=2026-09-01&hasta=2026-09-30
+
+### Usuarios con conteos
+GET {{api}}/usuarios
+
+### Inactivar un usuario (cambie el id) → luego sus transacciones dan USUARIO_INACTIVO
+PATCH {{api}}/usuarios/1
+Content-Type: application/json
+
+{ "estado": "INACTIVO" }
+
+### Reactivarlo
+PATCH {{api}}/usuarios/1
+Content-Type: application/json
+
+{ "estado": "ACTIVO" }
+
+### Anomalías con filtros
+GET {{api}}/anomalias?tipo=POSIBLE_FRAUDE&nivel=BAJO
+
+### Detalle de una anomalía con línea de tiempo (cambie el id)
+GET {{api}}/anomalias/1
+
+### Estadísticas del dashboard
+GET {{api}}/estadisticas
+
+### Eliminar una transacción (y sus anomalías)
+DELETE {{api}}/transacciones/10001
+
+###############################################################################
+# 7. Configuración (PUT exige el objeto COMPLETO; copie el de GET /config)
+###############################################################################
+
+### Ventana de 5 s y umbral 4
+PUT {{api}}/config
+Content-Type: application/json
+
+{
+  "ventanaDeslizante": { "segundos": 5, "umbral": 4 },
+  "franjasHorarias": {
+    "activo": true,
+    "modo": "OCURRENCIA",
+    "segundosVentanaMovil": 3600,
+    "franjas": [
+      { "nombre": "MANANA", "desde": "05:00:01", "hasta": "12:00:00", "limite": 10 },
+      { "nombre": "TARDE_NOCHE", "desde": "12:00:01", "hasta": "20:00:00", "limite": 6 },
+      { "nombre": "NOCHE_MADRUGADA", "desde": "20:00:01", "hasta": "05:00:00", "limite": 3 }
+    ]
+  },
+  "niveles": { "medioDesdeExcedente": 1, "altoDesdeExcedente": 3 },
+  "metodosPago": ["Tarjeta", "Efectivo", "Nequi", "Daviplata", "Transferencia"],
+  "hash": { "modo": "hmac" },
+  "lote": { "maxTransacciones": 1000 }
+}
+
+### Volver a los valores por defecto (3 s, umbral 3)
+PUT {{api}}/config
+Content-Type: application/json
+
+{
+  "ventanaDeslizante": { "segundos": 3, "umbral": 3 },
+  "franjasHorarias": {
+    "activo": true,
+    "modo": "OCURRENCIA",
+    "segundosVentanaMovil": 3600,
+    "franjas": [
+      { "nombre": "MANANA", "desde": "05:00:01", "hasta": "12:00:00", "limite": 10 },
+      { "nombre": "TARDE_NOCHE", "desde": "12:00:01", "hasta": "20:00:00", "limite": 6 },
+      { "nombre": "NOCHE_MADRUGADA", "desde": "20:00:01", "hasta": "05:00:00", "limite": 3 }
+    ]
+  },
+  "niveles": { "medioDesdeExcedente": 1, "altoDesdeExcedente": 3 },
+  "metodosPago": ["Tarjeta", "Efectivo", "Nequi", "Daviplata", "Transferencia"],
+  "hash": { "modo": "hmac" },
+  "lote": { "maxTransacciones": 1000 }
+}

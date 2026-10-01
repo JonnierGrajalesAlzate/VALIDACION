@@ -1,0 +1,27 @@
+{
+  "ventanaDeslizante": {
+    "segundos": 3,
+    "umbral": 3
+  },
+  "franjasHorarias": {
+    "activo": true,
+    "modo": "OCURRENCIA",
+    "segundosVentanaMovil": 3600,
+    "franjas": [
+      { "nombre": "MANANA", "desde": "05:00:01", "hasta": "12:00:00", "limite": 10 },
+      { "nombre": "TARDE_NOCHE", "desde": "12:00:01", "hasta": "20:00:00", "limite": 6 },
+      { "nombre": "NOCHE_MADRUGADA", "desde": "20:00:01", "hasta": "05:00:00", "limite": 3 }
+    ]
+  },
+  "niveles": {
+    "medioDesdeExcedente": 1,
+    "altoDesdeExcedente": 3
+  },
+  "metodosPago": ["Tarjeta", "Efectivo", "Nequi", "Daviplata", "Transferencia"],
+  "hash": {
+    "modo": "hmac"
+  },
+  "lote": {
+    "maxTransacciones": 1000
+  }
+}
