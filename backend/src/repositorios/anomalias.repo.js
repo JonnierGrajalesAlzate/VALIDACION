@@ -1,10 +1,6 @@
-/**
- * Acceso a la tabla anomalias. Solo SQL parametrizado.
- */
 const { consultar, pool } = require('../db/pool');
 const { crearFiltros } = require('./sqlUtil');
 
-/** Inserta varias anomalías en una sola sentencia. */
 async function insertarVarias(filas, cliente = pool) {
   if (!filas.length) return [];
   const r = await consultar(
@@ -26,6 +22,7 @@ async function insertarVarias(filas, cliente = pool) {
 
 const SELECT_BASE = `
   SELECT a.id, a.transaccion_id, a.tipo, a.nivel, a.cantidad_transacciones, a.ventana_segundos,
+         a.estado_revision, a.nota_revision, a.fecha_revision,
          a.fecha_creacion, a.fecha_actualizacion,
          t.valor, t.fecha_txn, t.metodo_pago, t.estado AS estado_transaccion,
          u.id AS usuario_id, u.email, u.nombre, u.estado AS estado_usuario
@@ -33,15 +30,11 @@ const SELECT_BASE = `
     JOIN transacciones t ON t.id = a.transaccion_id
     JOIN usuarios u ON u.id = t.usuario_id`;
 
-/**
- * Listado con filtros. El rango de fechas se aplica sobre la fecha de la
- * transacción (fecha_txn: cuándo ocurrió), no sobre fecha_creacion
- * (cuándo se registró en el sistema).
- */
-async function listar({ tipo, nivel, desde, hasta, usuario, limite, pagina }) {
+async function listar({ tipo, nivel, estadoRevision, desde, hasta, usuario, limite, pagina }) {
   const f = crearFiltros();
   if (tipo) f.agregar('a.tipo = ?', tipo);
   if (nivel) f.agregar('a.nivel = ?', nivel);
+  if (estadoRevision) f.agregar('a.estado_revision = ?', estadoRevision);
   if (desde) f.agregar('t.fecha_txn >= ?', desde);
   if (hasta) f.agregar('t.fecha_txn <= ?', hasta);
   if (usuario) f.agregar('u.email ILIKE ?', `%${usuario}%`);
@@ -62,4 +55,18 @@ async function obtenerPorId(id) {
   return r.rows[0] || null;
 }
 
-module.exports = { insertarVarias, listar, obtenerPorId };
+async function cambiarRevision(id, estado, nota) {
+  const r = await consultar(
+    `UPDATE anomalias
+        SET estado_revision = $2::varchar,
+            nota_revision   = CASE WHEN $3::boolean THEN $4::varchar ELSE nota_revision END,
+            fecha_revision  = CASE WHEN $2::varchar IN ('REVISADA', 'DESCARTADA') THEN NOW() ELSE NULL END
+      WHERE id = $1
+      RETURNING id`,
+    [id, estado, nota !== undefined, nota ?? null],
+    { fn: 'anomalias.cambiarRevision' },
+  );
+  return r.rows[0] ? obtenerPorId(id) : null;
+}
+
+module.exports = { insertarVarias, listar, obtenerPorId, cambiarRevision };

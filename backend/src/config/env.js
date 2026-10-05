@@ -1,18 +1,8 @@
-/**
- * Carga y valida las variables de entorno UNA sola vez.
- *
- * ¿Por qué validar el .env? Porque un PGPORT vacío o un HMAC_SECRET
- * faltante producen errores muy confusos más adelante ("hash inválido" en
- * TODAS las transacciones, o "connect ECONNREFUSED" sin más). Es mejor
- * detener el arranque aquí diciendo exactamente qué variable falta.
- */
 const path = require('path');
 const dotenv = require('dotenv');
 const { z } = require('zod');
 const { IANAZone } = require('luxon');
 
-// La ruta es relativa a este archivo, no al directorio desde donde se
-// ejecute node; así funciona igual con `npm start` o desde otra carpeta.
 dotenv.config({ path: path.join(__dirname, '..', '..', '.env'), quiet: true });
 
 const esquemaEnv = z.object({
@@ -39,15 +29,12 @@ function cargarEnv() {
     const detalle = resultado.error.issues
       .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
       .join('\n');
-    // Se lanza un Error normal: server.js lo atrapa y detiene el arranque.
     throw new Error(
       `Configuración inválida en backend/.env (copie .env.example y complételo):\n${detalle}`,
     );
   }
   const env = resultado.data;
 
-  // En pruebas se usa SIEMPRE la base de datos de pruebas. Esta guarda
-  // evita que Jest borre por accidente los datos reales.
   if (env.NODE_ENV === 'test') {
     env.PGDATABASE = env.PGDATABASE_TEST;
   }

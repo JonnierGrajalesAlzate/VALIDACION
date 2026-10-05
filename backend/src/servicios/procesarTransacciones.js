@@ -1,18 +1,3 @@
-/**
- * Orquesta el procesamiento de POST /api/transacciones, etapa por etapa:
- *
- *   RECEPCION → (PARSEO_JSON ya ocurrió en el middleware) → VALIDACION_ESQUEMA
- *   → VALIDACION_HASH → DUPLICADOS → USUARIO → ORDENAMIENTO
- *   → VENTANA_DESLIZANTE → PERSISTENCIA → RESPUESTA
- *
- * Principios:
- *  - Una transacción inválida NO tumba las demás: se aparta con sus errores
- *    y las demás siguen.
- *  - Las válidas se guardan TODAS JUNTAS dentro de una transacción SQL
- *    (BEGIN/COMMIT). Si falla algo al guardar → ROLLBACK: o se guarda el
- *    lote válido completo o no se guarda nada.
- *  - Todo se loguea con la etapa y el idTxn afectado.
- */
 const reglas = require('../config/reglas');
 const env = require('../config/env');
 const { enTransaccion } = require('../db/pool');
@@ -30,21 +15,13 @@ const anomaliasRepo = require('../repositorios/anomalias.repo');
 
 const log = crearLogger(__filename);
 
-// Llave del candado de PostgreSQL que serializa el procesamiento de lotes:
-// si dos lotes llegan a la vez, el segundo espera a que el primero termine;
-// así la ventana de cada uno ve las transacciones que guardó el otro.
 const LLAVE_CANDADO = 20260923;
 
 const abreviar = (hash) => (hash && hash.length > 12 ? `${hash.slice(0, 12)}…` : hash);
 
-/**
- * @param {*} cuerpo  JSON ya parseado (objeto o arreglo)
- * @returns {Promise<{ http: number, cuerpo: object }>}
- */
 async function procesarTransacciones(cuerpo, { requestId }) {
   const R = reglas.obtener();
 
-  // ── RECEPCION ──────────────────────────────────────────────────────────
   establecerEtapa(ETAPAS.RECEPCION);
   const esLote = Array.isArray(cuerpo);
   if (!esLote && tipoDe(cuerpo) !== 'object') {
@@ -68,7 +45,6 @@ async function procesarTransacciones(cuerpo, { requestId }) {
   log.info({ fn: 'procesarTransacciones', cantidad: elementos.length, modo: esLote ? 'lote' : 'individual' }, `Recibida(s) ${elementos.length} transacción(es)`);
 
   const rechazadas = [];
-  /** Aparta una transacción con sus errores y deja una línea de log por error. */
   function rechazar(posicion, idTxn, etapa, errores) {
     const conEtapa = errores.map((e) => ({ ...e, etapa }));
     rechazadas.push({ posicion, idTxn, etapa, errores: conEtapa });
@@ -80,7 +56,6 @@ async function procesarTransacciones(cuerpo, { requestId }) {
     }
   }
 
-  // ── VALIDACION_ESQUEMA ─────────────────────────────────────────────────
   establecerEtapa(ETAPAS.VALIDACION_ESQUEMA);
   let validas = [];
   elementos.forEach((el, i) => {
@@ -89,7 +64,6 @@ async function procesarTransacciones(cuerpo, { requestId }) {
     else rechazar(i, r.idTxn, ETAPAS.VALIDACION_ESQUEMA, r.errores);
   });
 
-  // ── VALIDACION_HASH ────────────────────────────────────────────────────
   establecerEtapa(ETAPAS.VALIDACION_HASH);
   validas = validas.filter((d) => {
     const v = verificarHash(d.original);
@@ -98,7 +72,6 @@ async function procesarTransacciones(cuerpo, { requestId }) {
       { fn: 'verificarHash', idTxn: d.idTxn, modo: v.modo, recibido: v.recibido, esperado: v.esperado },
       `VALIDACION_HASH: idTxn=${d.idTxn} hash no coincide. Recibido=${abreviar(v.recibido)}, Esperado=${abreviar(v.esperado)}`,
     );
-    // La cadena firmada solo en modo debug (LOG_LEVEL=debug).
     log.debug({ fn: 'verificarHash', idTxn: d.idTxn, cadenaFirmada: v.cadena }, `VALIDACION_HASH: cadena exacta que se firmó para idTxn=${d.idTxn}`);
     rechazar(d.posicion, d.idTxn, ETAPAS.VALIDACION_HASH, [crearDetalle({
       idTxn: d.idTxn,
@@ -108,14 +81,11 @@ async function procesarTransacciones(cuerpo, { requestId }) {
       mensaje: `hash no coincide con el ${v.modo === 'hmac' ? 'HMAC-SHA256' : 'SHA-256'} de la transacción: algún campo fue modificado o la llave (HMAC_SECRET) es distinta`,
       recibido: v.recibido,
       tipoRecibido: 'string',
-      // El hash correcto NO se devuelve fuera de desarrollo: sería un
-      // "oráculo" que firma cualquier transacción inventada.
       esperado: env.NODE_ENV === 'development' ? v.esperado : `${v.modo === 'hmac' ? 'HMAC-SHA256' : 'SHA-256'} de la transacción sin el campo hash (claves ordenadas, sin espacios)`,
     })]);
     return false;
   });
 
-  // ── DUPLICADOS dentro del mismo lote ───────────────────────────────────
   establecerEtapa(ETAPAS.DUPLICADOS);
   const primeraPosicion = new Map();
   validas = validas.filter((d) => {
@@ -135,11 +105,9 @@ async function procesarTransacciones(cuerpo, { requestId }) {
   let usuariosCreados = [];
 
   if (validas.length) {
-    // Todo lo que toca la BD va en UNA transacción SQL.
     ({ aceptadas, usuariosCreados } = await enTransaccion(async (cliente) => {
       await cliente.query('SELECT pg_advisory_xact_lock($1)', [LLAVE_CANDADO]);
 
-      // ── DUPLICADOS contra la base de datos ──────────────────────────────
       establecerEtapa(ETAPAS.DUPLICADOS);
       const existentes = await transaccionesRepo.idsExistentes(validas.map((d) => d.idTxn), cliente);
       validas = validas.filter((d) => {
@@ -153,7 +121,6 @@ async function procesarTransacciones(cuerpo, { requestId }) {
       });
       if (!validas.length) return { aceptadas: [], usuariosCreados: [] };
 
-      // ── USUARIO ─────────────────────────────────────────────────────────
       establecerEtapa(ETAPAS.USUARIO);
       const emails = [...new Set(validas.map((d) => d.email))];
       const existentesU = await usuariosRepo.buscarPorEmails(emails, cliente);
@@ -177,15 +144,11 @@ async function procesarTransacciones(cuerpo, { requestId }) {
       });
       if (!validas.length) return { aceptadas: [], usuariosCreados: creados };
 
-      // ── ORDENAMIENTO ────────────────────────────────────────────────────
       establecerEtapa(ETAPAS.ORDENAMIENTO);
       validas.sort((a, b) => a.fechaMs - b.fechaMs || a.idTxn - b.idTxn);
       log.debug({ fn: 'procesarTransacciones', orden: validas.map((d) => d.idTxn) }, 'ORDENAMIENTO: transacciones ordenadas cronológicamente');
 
-      // ── VENTANA_DESLIZANTE ──────────────────────────────────────────────
       establecerEtapa(ETAPAS.VENTANA_DESLIZANTE);
-      // Para cada usuario se cargan de la BD las transacciones que todavía
-      // caben en su ventana: así se detectan anomalías que cruzan dos envíos.
       const fechasPorUsuario = new Map();
       for (const d of validas) {
         if (!fechasPorUsuario.has(d.usuarioId)) fechasPorUsuario.set(d.usuarioId, []);
@@ -201,7 +164,6 @@ async function procesarTransacciones(cuerpo, { requestId }) {
         reglas: R,
       });
 
-      // ── PERSISTENCIA ────────────────────────────────────────────────────
       establecerEtapa(ETAPAS.PERSISTENCIA);
       await transaccionesRepo.insertarVarias(validas.map((d) => ({
         id: d.idTxn, usuarioId: d.usuarioId, valor: d.valor, fechaMs: d.fechaMs,
@@ -235,7 +197,6 @@ async function procesarTransacciones(cuerpo, { requestId }) {
     }, { fn: 'procesarTransacciones' }));
   }
 
-  // ── RESPUESTA ──────────────────────────────────────────────────────────
   establecerEtapa(ETAPAS.RESPUESTA);
   return construirRespuesta({ requestId, esLote, total: elementos.length, aceptadas, rechazadas, usuariosCreados });
 }
@@ -248,10 +209,10 @@ function construirRespuesta({ requestId, esLote, total, aceptadas, rechazadas, u
   const anomalias = aceptadas.reduce((n, a) => n + a.anomalias.length, 0);
 
   let http;
-  if (!rechazadas.length) http = 201; // todo creado
-  else if (aceptadas.length) http = 207; // lote mixto: unas sí, otras no (Multi-Status)
+  if (!rechazadas.length) http = 201;
+  else if (aceptadas.length) http = 207;
   else if (codigos.every((c) => c === 'DUPLICADO' || c === 'DUPLICADO_EN_LOTE')) http = 409;
-  else http = 422; // nada se aceptó y hay al menos un error de validación
+  else http = 422;
 
   const etapas = [...new Set(rechazadas.map((r) => r.etapa))];
   const cuerpo = {

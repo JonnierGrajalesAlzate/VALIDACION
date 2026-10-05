@@ -1,16 +1,6 @@
-/**
- * Punto de entrada del servidor.
- *
- * Antes de aceptar peticiones verifica la conexión a PostgreSQL y que
- * existan las 3 tablas con sus columnas. Si algo falla, DETIENE el
- * arranque diciendo exactamente qué falta (no arranca "a medias" para
- * fallar después en la primera petición).
- */
 let log;
 let vaciarLogs = async () => {};
 
-// Estos manejadores se registran primero para atrapar incluso errores de
-// configuración (p. ej. un .env inválido).
 process.on('unhandledRejection', (razon) => {
   const err = razon instanceof Error ? razon : new Error(String(razon));
   const { obtenerContexto } = require('./logging/contexto');
@@ -24,8 +14,6 @@ process.on('uncaughtException', (err) => {
   const etapa = obtenerContexto().etapa || 'DESCONOCIDA';
   if (log) log.error({ fn: 'uncaughtException', etapa, error: err }, `${etapa}: excepción no capturada: ${err.message}. El proceso se detiene para no quedar en un estado inconsistente.`);
   else console.error('[uncaughtException]', err);
-  // Tras una excepción no capturada el estado del proceso es incierto:
-  // lo correcto es terminar (y que un supervisor lo reinicie).
   vaciarLogs().finally(() => process.exit(1));
 });
 
@@ -34,7 +22,6 @@ async function iniciar() {
   try {
     env = require('./config/env');
   } catch (err) {
-    // El logger depende de env, así que aquí solo queda la consola.
     console.error(`\n[ARRANQUE] ${err.message}\n`);
     process.exit(1);
   }
@@ -47,7 +34,6 @@ async function iniciar() {
 
   log.info({ fn: 'iniciar', etapa: 'ARRANQUE', entorno: env.NODE_ENV, bd: `${env.PGHOST}:${env.PGPORT}/${env.PGDATABASE}` }, 'Iniciando Appresso API');
 
-  // 1. Reglas de negocio (ventana, umbral, franjas...) válidas.
   try {
     reglas.cargar();
   } catch (err) {
@@ -56,7 +42,6 @@ async function iniciar() {
     process.exit(1);
   }
 
-  // 2. Base de datos disponible y con el esquema completo.
   const bd = await verificarEsquema();
   if (!bd.ok) {
     for (const problema of bd.problemas) {

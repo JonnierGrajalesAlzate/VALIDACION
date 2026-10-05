@@ -1,25 +1,5 @@
--- =====================================================================
---  Appresso — Datos de ejemplo (GENERADO por backend/scripts/generar-seed.js)
---  No editar a mano: modifique el script y ejecute  npm run generar:seed
---
---  Ejecútelo en pgAdmin 4 (Query Tool) DESPUÉS de schema.sql, con las
---  tablas vacías (si ya hay datos: database/limpiar-datos.sql).
---
---  Hashes firmados con HMAC_SECRET = "appresso-secreto-desarrollo"
---  (si su .env usa otra llave, regenere el seed).
---  Ventana: 3 s, umbral: 3; franjas activas: true (OCURRENCIA).
---
---  Casos de uso (01/09/2026, ids 900001–900009):
---    1. b@b.com 10:00:01, :02, :03          → ANOMALÍA en la tercera (900003)
---    2. c@c.com 10:00:01, 10:00:10, 10:01:20 → NORMAL
---    3. d@d.com, e@e.com, f@f.com            → NORMAL (ventanas separadas)
---  Usuario INACTIVO: inactivo@appresso.com
---  Total: 415 transacciones, 15 usuarios.
--- =====================================================================
-
 BEGIN;
 
--- Usuarios (nombre = parte local del correo, como hace la API)
 INSERT INTO usuarios (nombre, email, estado) VALUES
   ('aa', 'aa@aa.com', 'ACTIVO'),
   ('ana', 'ana@appresso.com', 'ACTIVO'),
@@ -37,7 +17,6 @@ INSERT INTO usuarios (nombre, email, estado) VALUES
   ('sofia', 'sofia@appresso.com', 'ACTIVO'),
   ('valentina', 'valentina@appresso.com', 'ACTIVO');
 
--- Transacciones (usuario_id se busca por correo)
 INSERT INTO transacciones (id, usuario_id, valor, fecha_txn, estado, hash, metodo_pago)
 SELECT v.id, u.id, v.valor, v.fecha_txn, v.estado, v.hash, v.metodo_pago FROM (VALUES
   (900010, 'inactivo@appresso.com', 6000, '2026-09-01T08:15:00.000-05:00'::timestamptz, 'VALIDA', '18df411c79f4018d0faae3562367c77a2e5da511bb79509307edac310ed60ae2', 'Efectivo'),
@@ -415,7 +394,7 @@ SELECT v.id, u.id, v.valor, v.fecha_txn, v.estado, v.hash, v.metodo_pago FROM (V
   (900378, 'aa@aa.com', 7800, '2026-09-28T21:40:43.510-05:00'::timestamptz, 'ANOMALA', '9189fd5d10f47c5491ffdaf637ec6f4eb4039f6bddca89f8234d064f10d8ba38', 'Efectivo'),
   (900379, 'aa@aa.com', 6000, '2026-09-28T21:40:43.709-05:00'::timestamptz, 'ANOMALA', '9a3a2b8ecd76def9c2192fda73e0bf3ed33f5a621f86476b19398fca19177e1c', 'Efectivo'),
   (900325, 'luis@appresso.com', 7800, '2026-09-28T22:16:30.626-05:00'::timestamptz, 'VALIDA', 'ce6b387d458fb3715cb41ee380703f3393e279fee043fee668bc727a4dffc7fc', 'Transferencia'),
-  (900345, 'aa@aa.com', 15500, '2026-09-29T01:34:28.830-05:00'::timestamptz, 'ANOMALA', 'e685d1fa69ae080ae80428101d294d23048fccfd5f73266811a265f94c7ab151', 'Daviplata'),
+  (900345, 'aa@aa.com', 15500, '2026-09-29T01:34:28.830-05:00'::timestamptz, 'VALIDA', 'e685d1fa69ae080ae80428101d294d23048fccfd5f73266811a265f94c7ab151', 'Daviplata'),
   (900336, 'andres@appresso.com', 6000, '2026-09-29T06:04:25.082-05:00'::timestamptz, 'VALIDA', '518814038a7e514322de16164567400a00dd71ab296cd43c8bf45b3094c2f990', 'Tarjeta'),
   (900333, 'jorge@appresso.com', 4500, '2026-09-29T06:10:40.758-05:00'::timestamptz, 'VALIDA', '5b8e99e03b6c73443fcee8e38f4f54f238d2b8790581dcc63047e71dea710325', 'Tarjeta'),
   (900341, 'jorge@appresso.com', 12000, '2026-09-29T06:26:29.013-05:00'::timestamptz, 'VALIDA', '5e9ab8b340e3a32c59f8788266774fb213aee1bd88a3da4f9193f31ce9a11f18', 'Daviplata'),
@@ -458,45 +437,36 @@ SELECT v.id, u.id, v.valor, v.fecha_txn, v.estado, v.hash, v.metodo_pago FROM (V
 ) AS v(id, email, valor, fecha_txn, estado, hash, metodo_pago)
 JOIN usuarios u ON u.email = v.email;
 
--- Anomalías (calculadas con el algoritmo de ventana deslizante de la API)
-INSERT INTO anomalias (transaccion_id, tipo, nivel, cantidad_transacciones, ventana_segundos) VALUES
-  (900003, 'POSIBLE_FRAUDE', 'BAJO', 3, 3),
-  (900345, 'EXCESO_FRANJA_HORARIA', 'MEDIO', 5, 32400),
-  (900361, 'POSIBLE_FRAUDE', 'BAJO', 3, 3),
-  (900362, 'POSIBLE_FRAUDE', 'MEDIO', 4, 3),
-  (900363, 'POSIBLE_FRAUDE', 'MEDIO', 5, 3),
-  (900366, 'POSIBLE_FRAUDE', 'BAJO', 3, 3),
-  (900369, 'POSIBLE_FRAUDE', 'BAJO', 3, 3),
-  (900370, 'POSIBLE_FRAUDE', 'MEDIO', 4, 3),
-  (900371, 'POSIBLE_FRAUDE', 'MEDIO', 5, 3),
-  (900372, 'POSIBLE_FRAUDE', 'MEDIO', 5, 3),
-  (900372, 'EXCESO_FRANJA_HORARIA', 'BAJO', 7, 28800),
-  (900375, 'POSIBLE_FRAUDE', 'BAJO', 3, 3),
-  (900378, 'POSIBLE_FRAUDE', 'BAJO', 3, 3),
-  (900379, 'POSIBLE_FRAUDE', 'MEDIO', 4, 3),
-  (900379, 'EXCESO_FRANJA_HORARIA', 'BAJO', 4, 32400),
-  (900382, 'POSIBLE_FRAUDE', 'BAJO', 3, 3),
-  (900383, 'POSIBLE_FRAUDE', 'MEDIO', 4, 3),
-  (900386, 'POSIBLE_FRAUDE', 'BAJO', 3, 3),
-  (900389, 'POSIBLE_FRAUDE', 'BAJO', 3, 3),
-  (900392, 'POSIBLE_FRAUDE', 'BAJO', 3, 3),
-  (900393, 'POSIBLE_FRAUDE', 'MEDIO', 4, 3),
-  (900393, 'EXCESO_FRANJA_HORARIA', 'BAJO', 4, 32400),
-  (900394, 'POSIBLE_FRAUDE', 'MEDIO', 5, 3),
-  (900394, 'EXCESO_FRANJA_HORARIA', 'MEDIO', 5, 32400),
-  (900395, 'POSIBLE_FRAUDE', 'ALTO', 6, 3),
-  (900395, 'EXCESO_FRANJA_HORARIA', 'MEDIO', 6, 32400),
-  (900398, 'POSIBLE_FRAUDE', 'BAJO', 3, 3),
-  (900399, 'POSIBLE_FRAUDE', 'MEDIO', 4, 3),
-  (900400, 'POSIBLE_FRAUDE', 'MEDIO', 5, 3),
-  (900403, 'POSIBLE_FRAUDE', 'BAJO', 3, 3),
-  (900406, 'POSIBLE_FRAUDE', 'BAJO', 3, 3),
-  (900407, 'POSIBLE_FRAUDE', 'MEDIO', 4, 3),
-  (900410, 'POSIBLE_FRAUDE', 'BAJO', 3, 3),
-  (900411, 'POSIBLE_FRAUDE', 'MEDIO', 4, 3),
-  (900411, 'EXCESO_FRANJA_HORARIA', 'BAJO', 4, 32400),
-  (900412, 'POSIBLE_FRAUDE', 'MEDIO', 5, 3),
-  (900412, 'EXCESO_FRANJA_HORARIA', 'MEDIO', 5, 32400),
-  (900415, 'POSIBLE_FRAUDE', 'BAJO', 3, 3);
+INSERT INTO anomalias (transaccion_id, tipo, nivel, cantidad_transacciones, ventana_segundos, estado_revision, nota_revision, fecha_revision) VALUES
+  (900003, 'POSIBLE_FRAUDE', 'BAJO', 3, 10, 'REVISADA', 'Cliente confirmó que no reconoce las compras; tarjeta bloqueada', '2026-09-02T15:00:03.000Z'::timestamptz),
+  (900410, 'POSIBLE_FRAUDE', 'BAJO', 3, 3, 'DESCARTADA', 'Falso positivo: pedido grupal en la barra', '2026-09-04T02:02:37.558Z'::timestamptz),
+  (900411, 'POSIBLE_FRAUDE', 'MEDIO', 4, 3, 'ABIERTA', NULL, NULL),
+  (900412, 'POSIBLE_FRAUDE', 'MEDIO', 5, 3, 'REVISADA', 'Ráfaga confirmada con el punto de venta', '2026-09-04T02:02:38.395Z'::timestamptz),
+  (900406, 'POSIBLE_FRAUDE', 'BAJO', 3, 10, 'REVISADA', 'Cliente confirmó que no reconoce las compras; tarjeta bloqueada', '2026-09-09T16:38:33.394Z'::timestamptz),
+  (900407, 'POSIBLE_FRAUDE', 'MEDIO', 4, 10, 'DESCARTADA', 'Falso positivo: pedido grupal en la barra', '2026-09-09T16:38:34.033Z'::timestamptz),
+  (900382, 'POSIBLE_FRAUDE', 'BAJO', 3, 6, 'ABIERTA', NULL, NULL),
+  (900383, 'POSIBLE_FRAUDE', 'MEDIO', 4, 6, 'REVISADA', 'Ráfaga confirmada con el punto de venta', '2026-09-09T21:03:40.013Z'::timestamptz),
+  (900403, 'POSIBLE_FRAUDE', 'BAJO', 3, 6, 'REVISADA', 'Cliente confirmó que no reconoce las compras; tarjeta bloqueada', '2026-09-10T21:49:26.454Z'::timestamptz),
+  (900375, 'POSIBLE_FRAUDE', 'BAJO', 3, 6, 'DESCARTADA', 'Falso positivo: pedido grupal en la barra', '2026-09-11T21:46:01.266Z'::timestamptz),
+  (900389, 'POSIBLE_FRAUDE', 'BAJO', 3, 6, 'ABIERTA', NULL, NULL),
+  (900386, 'POSIBLE_FRAUDE', 'BAJO', 3, 6, 'REVISADA', 'Ráfaga confirmada con el punto de venta', '2026-09-19T21:33:35.212Z'::timestamptz),
+  (900369, 'POSIBLE_FRAUDE', 'BAJO', 3, 6, 'REVISADA', 'Cliente confirmó que no reconoce las compras; tarjeta bloqueada', '2026-09-21T20:56:12.549Z'::timestamptz),
+  (900370, 'POSIBLE_FRAUDE', 'MEDIO', 4, 6, 'DESCARTADA', 'Falso positivo: pedido grupal en la barra', '2026-09-21T20:56:13.193Z'::timestamptz),
+  (900371, 'POSIBLE_FRAUDE', 'MEDIO', 5, 6, 'ABIERTA', NULL, NULL),
+  (900372, 'POSIBLE_FRAUDE', 'ALTO', 6, 6, 'REVISADA', 'Ráfaga confirmada con el punto de venta', '2026-09-21T20:56:14.300Z'::timestamptz),
+  (900398, 'POSIBLE_FRAUDE', 'BAJO', 3, 6, 'NUEVA', NULL, NULL),
+  (900399, 'POSIBLE_FRAUDE', 'MEDIO', 4, 6, 'NUEVA', NULL, NULL),
+  (900400, 'POSIBLE_FRAUDE', 'MEDIO', 5, 6, 'NUEVA', NULL, NULL),
+  (900366, 'POSIBLE_FRAUDE', 'BAJO', 3, 6, 'NUEVA', NULL, NULL),
+  (900378, 'POSIBLE_FRAUDE', 'BAJO', 3, 3, 'NUEVA', NULL, NULL),
+  (900379, 'POSIBLE_FRAUDE', 'MEDIO', 4, 3, 'NUEVA', NULL, NULL),
+  (900361, 'POSIBLE_FRAUDE', 'BAJO', 3, 10, 'NUEVA', NULL, NULL),
+  (900362, 'POSIBLE_FRAUDE', 'MEDIO', 4, 10, 'NUEVA', NULL, NULL),
+  (900363, 'POSIBLE_FRAUDE', 'MEDIO', 5, 10, 'NUEVA', NULL, NULL),
+  (900415, 'POSIBLE_FRAUDE', 'BAJO', 3, 10, 'NUEVA', NULL, NULL),
+  (900392, 'POSIBLE_FRAUDE', 'BAJO', 3, 3, 'NUEVA', NULL, NULL),
+  (900393, 'POSIBLE_FRAUDE', 'MEDIO', 4, 3, 'NUEVA', NULL, NULL),
+  (900394, 'POSIBLE_FRAUDE', 'MEDIO', 5, 3, 'NUEVA', NULL, NULL),
+  (900395, 'POSIBLE_FRAUDE', 'ALTO', 6, 3, 'NUEVA', NULL, NULL);
 
 COMMIT;

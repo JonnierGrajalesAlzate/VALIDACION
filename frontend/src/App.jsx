@@ -1,4 +1,3 @@
-/** Estructura de la aplicación: barra de navegación + rutas. */
 import { useEffect, useState } from 'react';
 import { NavLink, Route, Routes } from 'react-router-dom';
 import { api } from './api/cliente';
@@ -10,7 +9,6 @@ import Registro from './paginas/Registro';
 import Transacciones from './paginas/Transacciones';
 import Usuarios from './paginas/Usuarios';
 
-/** Indicador del estado del backend y de PostgreSQL (GET /api/health). */
 function EstadoApi() {
   const [salud, setSalud] = useState(null);
   useEffect(() => {

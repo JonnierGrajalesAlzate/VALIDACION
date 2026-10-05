@@ -1,11 +1,3 @@
-/**
- * Compatibilidad del hash con el código Python del profesor.
- *
- * Los fixtures se generaron con scripts/hash_profesor.py:
- *   json.dumps(datos, sort_keys=True, separators=(",", ":")) + HMAC-SHA256
- * La prueba parsea el JSON EXACTO que se enviaría a la API y comprueba que
- * Node produce la misma cadena (byte por byte) y el mismo hash.
- */
 const { spawnSync } = require('child_process');
 const path = require('path');
 const fixtures = require('../fixtures/hashes-python.json');

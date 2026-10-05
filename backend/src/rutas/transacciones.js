@@ -1,9 +1,3 @@
-/**
- * /api/transacciones
- *   POST   /       → una transacción (objeto) o un lote (arreglo)
- *   GET    /       → listar con filtros (usuario, desde, hasta, estado, metodoPago) y paginación
- *   DELETE /:id    → eliminar (para limpiar pruebas); borra también sus anomalías
- */
 const { Router } = require('express');
 const { z } = require('zod');
 const { procesarTransacciones } = require('../servicios/procesarTransacciones');
@@ -32,7 +26,6 @@ const esquemaListar = z.strictObject({
   ...paginacion,
 });
 
-/** Fila de BD → objeto de la API (nombres en camelCase y fechas en hora del negocio). */
 function aTransaccionApi(f) {
   return {
     idTxn: f.id,

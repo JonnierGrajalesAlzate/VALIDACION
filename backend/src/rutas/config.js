@@ -1,11 +1,3 @@
-/**
- * /api/config
- *   GET → reglas vigentes (ventana, umbral, franjas, niveles, métodos de pago, modo hash, lote)
- *   PUT → reemplaza las reglas (objeto COMPLETO, validado con Zod) y las guarda en config/reglas.json
- *
- * Los cambios aplican a las transacciones que lleguen DESPUÉS; las
- * anomalías ya registradas conservan el ventana_segundos con que se detectaron.
- */
 const { Router } = require('express');
 const reglas = require('../config/reglas');
 const { ErrorApp } = require('../errores/ErrorApp');
@@ -36,7 +28,7 @@ router.put('/', (req, res) => {
       errores: err.detalles.map((d) => ({ idTxn: null, campo: d.campo, codigo: 'CONFIGURACION_INVALIDA', mensaje: `${d.campo}: ${d.mensaje}`, recibido: null, esperado: null })),
     });
   }
-  log.info({ fn: 'actualizar', ventana: nuevas.ventanaDeslizante, modoFranjas: nuevas.franjasHorarias.modo }, 'Configuración de reglas actualizada');
+  log.info({ fn: 'actualizar', ventana: nuevas.ventanaDeslizante, franjas: nuevas.franjasHorarias }, 'Configuración de reglas actualizada');
   res.json({ ok: true, requestId: req.requestId, mensaje: 'Configuración actualizada; aplica a las transacciones que lleguen desde ahora', reglas: nuevas });
 });
 

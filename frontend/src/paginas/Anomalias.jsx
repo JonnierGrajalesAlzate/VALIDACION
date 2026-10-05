@@ -1,11 +1,10 @@
-/** Lista de anomalías con filtros (tipo, nivel, fechas, usuario). */
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, consulta } from '../api/cliente';
 import { ListaErrores } from '../componentes/PanelResultado';
-import { NOMBRE_TIPO, fmtFecha, fmtPesos } from '../util/formato';
+import { ESTADO_REVISION, NOMBRE_TIPO, fmtFecha, fmtPesos } from '../util/formato';
 
-const VACIO = { tipo: '', nivel: '', desde: '', hasta: '', usuario: '' };
+const VACIO = { tipo: '', nivel: '', estadoRevision: '', desde: '', hasta: '', usuario: '' };
 
 export default function Anomalias() {
   const [params, setParams] = useSearchParams();
@@ -31,9 +30,11 @@ export default function Anomalias() {
       <div className="encabezado"><div><h1>Anomalías</h1><p>El rango de fechas se aplica sobre la fecha de la transacción.</p></div></div>
       <form className="filtros tarjeta" onSubmit={aplicar}>
         <div><label htmlFor="f-tipo">Tipo</label>
-          <select id="f-tipo" value={filtros.tipo} onChange={set('tipo')}><option value="">Todos</option><option value="POSIBLE_FRAUDE">Posible fraude</option><option value="EXCESO_FRANJA_HORARIA">Exceso franja</option></select></div>
+          <select id="f-tipo" value={filtros.tipo} onChange={set('tipo')}><option value="">Todos</option><option value="POSIBLE_FRAUDE">Posible fraude</option></select></div>
         <div><label htmlFor="f-nivel">Nivel</label>
           <select id="f-nivel" value={filtros.nivel} onChange={set('nivel')}><option value="">Todos</option><option>BAJO</option><option>MEDIO</option><option>ALTO</option></select></div>
+        <div><label htmlFor="f-revision">Revisión</label>
+          <select id="f-revision" value={filtros.estadoRevision} onChange={set('estadoRevision')}><option value="">Todas</option>{Object.entries(ESTADO_REVISION).map(([k, v]) => <option key={k} value={k}>{v.plural}</option>)}</select></div>
         <div><label htmlFor="f-desde">Desde</label><input id="f-desde" type="date" value={filtros.desde} onChange={set('desde')} /></div>
         <div><label htmlFor="f-hasta">Hasta</label><input id="f-hasta" type="date" value={filtros.hasta} onChange={set('hasta')} /></div>
         <div><label htmlFor="f-usuario">Usuario</label><input id="f-usuario" value={filtros.usuario} onChange={set('usuario')} placeholder="correo o parte" /></div>
@@ -47,13 +48,14 @@ export default function Anomalias() {
           {total === 0 ? <p className="vacio">No hay anomalías con esos filtros.</p> : (
             <div className="tabla-scroll">
               <table>
-                <thead><tr><th>#</th><th>Tipo</th><th>Nivel</th><th className="num">Txn en ventana</th><th className="num">Ventana (s)</th><th>idTxn</th><th>Usuario</th><th>Fecha txn</th><th>Método</th><th className="num">Valor</th></tr></thead>
+                <thead><tr><th>#</th><th>Tipo</th><th>Nivel</th><th>Revisión</th><th className="num">Txn en ventana</th><th className="num">Ventana (s)</th><th>idTxn</th><th>Usuario</th><th>Fecha txn</th><th>Método</th><th className="num">Valor</th></tr></thead>
                 <tbody>
                   {r.cuerpo.datos.map((a) => (
                     <tr key={a.id}>
                       <td><Link to={`/anomalias/${a.id}`}>{a.id}</Link></td>
                       <td><span className="insignia alerta">{NOMBRE_TIPO[a.tipo]}</span></td>
                       <td>{a.nivel}</td>
+                      <td><span className={`insignia ${ESTADO_REVISION[a.estadoRevision].clase}`}>{ESTADO_REVISION[a.estadoRevision].texto}</span></td>
                       <td className="num">{a.cantidadTransacciones}</td>
                       <td className="num">{a.ventanaSegundos}</td>
                       <td className="mono">{a.idTxn}</td>

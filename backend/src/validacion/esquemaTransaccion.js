@@ -1,29 +1,11 @@
-/**
- * Validación ESTRICTA de una transacción (etapa VALIDACION_ESQUEMA).
- *
- * Reglas:
- *  - Exactamente 6 campos: idTxn, user, date, value, paymentMethod, hash.
- *    Faltantes o extra → error (z.strictObject).
- *  - SIN coerción: "10001" (string) NO se convierte a 10001; se rechaza.
- *    Por eso se usa z.int()/z.number() y nunca z.coerce.
- *  - Se validan TODOS los campos y se devuelven TODOS los errores juntos
- *    (Zod no se detiene en el primero).
- *
- * Cada error sale con la estructura fija:
- *   { idTxn, campo, codigo, mensaje, recibido, tipoRecibido, esperado }
- */
 const { z } = require('zod');
 const { crearDetalle } = require('../errores/ErrorApp');
 const { fuenteNumero, esLiteralDecimal } = require('./jsonCrudo');
 const { parsearFechaIso } = require('./fechas');
 
 const CAMPOS = ['idTxn', 'user', 'date', 'value', 'paymentMethod', 'hash'];
-const VALOR_MAXIMO = 999999999999.99; // límite de NUMERIC(14,2)
+const VALOR_MAXIMO = 999999999999.99;
 
-/**
- * Descripción de cada campo: `debeSer` se usa en el mensaje y `esperado`
- * en la propiedad "esperado" de la respuesta.
- */
 function descripciones(reglas) {
   return {
     idTxn: { debeSer: 'entero positivo', esperado: 'integer > 0 sin comillas (ej. 10001)' },
@@ -35,14 +17,12 @@ function descripciones(reglas) {
   };
 }
 
-/** Tipo "visible" de un valor, distinguiendo null, arreglo y objeto. */
 function tipoDe(valor) {
   if (valor === null) return 'null';
   if (Array.isArray(valor)) return 'array';
   return typeof valor;
 }
 
-/** Texto para el mensaje: string '50000', number 50000, null, array [...]. */
 function describirValor(valor) {
   const tipo = tipoDe(valor);
   if (tipo === 'string') return `string '${valor.length > 80 ? `${valor.slice(0, 80)}…` : valor}'`;
@@ -52,25 +32,20 @@ function describirValor(valor) {
   return `${tipo} ${json && json.length > 80 ? `${json.slice(0, 80)}…` : json}`;
 }
 
-/** Cantidad de decimales de un número (maneja notación científica: 1e-7 → 7). */
 function contarDecimales(numero) {
   const [mantisa, exp] = String(numero).toLowerCase().split('e');
   const decimalesMantisa = (mantisa.split('.')[1] || '').length;
   return Math.max(0, decimalesMantisa - Number(exp || 0));
 }
 
-/** Construye el esquema Zod con la configuración vigente (métodos de pago). */
 function construirEsquema(reglas) {
   return z.strictObject({
-    // z.int() además exige un entero "seguro" (≤ 2^53-1): más grande, JS
-    // ya no lo representa exacto y dos idTxn distintos se confundirían.
     idTxn: z.int().positive(),
     user: z.email().max(254),
     date: z.string().superRefine((texto, ctx) => {
       const r = parsearFechaIso(texto);
       if (!r.ok) ctx.addIssue({ code: 'custom', message: r.mensaje, params: { codigo: r.codigo } });
     }),
-    // z.number() de Zod 4 ya rechaza NaN e Infinity.
     value: z.number().positive().max(VALOR_MAXIMO),
     paymentMethod: z.string().superRefine((texto, ctx) => {
       if (texto.trim() === '') {
@@ -83,7 +58,6 @@ function construirEsquema(reglas) {
   });
 }
 
-/** Convierte un issue de Zod en un detalle de error claro en español. */
 function issueADetalle(issue, obj, idTxn, posicion, desc) {
   const campo = issue.path[0];
   const presente = Object.prototype.hasOwnProperty.call(obj, campo);
@@ -117,15 +91,7 @@ function issueADetalle(issue, obj, idTxn, posicion, desc) {
   return crearDetalle({ ...base, codigo: 'FORMATO_INVALIDO', mensaje: `campo '${campo}' inválido: ${issue.message}` });
 }
 
-/**
- * Valida una transacción.
- * @param {*} obj        elemento recibido (idealmente un objeto)
- * @param {number} posicion  índice dentro del lote (0 si es individual)
- * @param {object} reglas    reglas vigentes
- * @returns {{ ok: true, datos: object } | { ok: false, idTxn: number|null, errores: object[] }}
- */
 function validarTransaccion(obj, posicion, reglas) {
-  // idTxn "identificable" para los mensajes, aunque el resto esté mal.
   const idTxn = obj && typeof obj === 'object' && Number.isSafeInteger(obj.idTxn) ? obj.idTxn : null;
 
   if (tipoDe(obj) !== 'object') {
@@ -158,15 +124,12 @@ function validarTransaccion(obj, posicion, reglas) {
         continue;
       }
       const campo = issue.path[0];
-      if (camposConError.has(campo)) continue; // un error por campo es suficiente
+      if (camposConError.has(campo)) continue;
       camposConError.add(campo);
       errores.push(issueADetalle(issue, obj, idTxn, posicion, desc));
     }
   }
 
-  // ── Reglas que Zod no puede ver porque dependen del TEXTO original ──
-  // idTxn escrito como 10001.0 o 1e4: JSON.parse lo deja en 10001, pero
-  // no es un entero literal; en modo estricto se rechaza.
   if (!camposConError.has('idTxn') && esLiteralDecimal(fuenteNumero(obj, 'idTxn'))) {
     camposConError.add('idTxn');
     errores.push(crearDetalle({
@@ -186,7 +149,6 @@ function validarTransaccion(obj, posicion, reglas) {
 
   if (errores.length) return { ok: false, idTxn, errores };
 
-  // ── Datos normalizados para el resto del proceso ──
   const fecha = parsearFechaIso(obj.date).fecha;
   const email = obj.user.toLowerCase();
   return {
@@ -194,13 +156,13 @@ function validarTransaccion(obj, posicion, reglas) {
     datos: {
       idTxn: obj.idTxn,
       email,
-      nombre: email.split('@')[0], // el JSON no trae nombre (ver DECISIONES.md)
+      nombre: email.split('@')[0],
       fechaMs: fecha.toMillis(),
       fechaTexto: obj.date,
       valor: obj.value,
       metodoPago: obj.paymentMethod,
       hash: obj.hash.toLowerCase(),
-      original: obj, // se conserva para verificar el hash con el texto exacto de los números
+      original: obj,
       posicion,
     },
   };

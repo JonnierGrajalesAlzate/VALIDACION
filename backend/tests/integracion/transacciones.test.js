@@ -1,6 +1,3 @@
-/**
- * POST /api/transacciones de punta a punta (API + PostgreSQL de pruebas).
- */
 const fs = require('fs');
 const path = require('path');
 const request = require('supertest');
@@ -27,12 +24,12 @@ describe('Casos de uso obligatorios', () => {
     const r = await enviar(lote);
     expect(r.status).toBe(201);
     expect(r.body.resumen).toMatchObject({ aceptadas: 3, rechazadas: 0, anomalias: 1 });
-    expect(r.body.aceptadas[2]).toMatchObject({ estado: 'ANOMALA', anomalias: [{ tipo: 'POSIBLE_FRAUDE', nivel: 'BAJO', cantidad: 3, ventanaSegundos: 3 }] });
+    expect(r.body.aceptadas[2]).toMatchObject({ estado: 'ANOMALA', anomalias: [{ tipo: 'POSIBLE_FRAUDE', nivel: 'BAJO', cantidad: 3, ventanaSegundos: 10, franja: 'MANANA' }] });
     expect(await estadoDe(lote[2].idTxn)).toBe('ANOMALA');
     expect(await estadoDe(lote[0].idTxn)).toBe('VALIDA');
     const a = (await pool.query('SELECT * FROM anomalias')).rows;
     expect(a).toHaveLength(1);
-    expect(a[0]).toMatchObject({ transaccion_id: lote[2].idTxn, cantidad_transacciones: 3, ventana_segundos: 3, tipo: 'POSIBLE_FRAUDE' });
+    expect(a[0]).toMatchObject({ transaccion_id: lote[2].idTxn, cantidad_transacciones: 3, ventana_segundos: 10, tipo: 'POSIBLE_FRAUDE' });
   });
 
   test('Caso 1 enviado de a una transacción por petición → también detecta la anomalía', async () => {
@@ -105,12 +102,11 @@ describe('Errores de validación (uno por tipo)', () => {
 
   test('hash inválido → 422 VALIDACION_HASH, sin revelar el hash correcto fuera de desarrollo', async () => {
     const t = txn();
-    const r = await enviar({ ...t, value: 99999 }); // se alteró el valor después de firmar
+    const r = await enviar({ ...t, value: 99999 });
     expect(r.status).toBe(422);
     expect(r.body.etapa).toBe('VALIDACION_HASH');
     expect(r.body.errores[0]).toMatchObject({ campo: 'hash', codigo: 'HASH_INVALIDO', recibido: t.hash });
     expect(r.body.errores[0].esperado).not.toMatch(/^[0-9a-f]{64}$/);
-    // El log sí muestra recibido y esperado
     const logTxt = fs.readFileSync(path.join(__dirname, '..', '..', 'logs', 'test.log'), 'utf8');
     expect(logTxt).toContain(`[${r.body.requestId}] [VALIDACION_HASH]`);
     expect(logTxt).toMatch(new RegExp(`idTxn=${t.idTxn} hash no coincide\\. Recibido=${t.hash.slice(0, 12)}…, Esperado=`));
@@ -210,7 +206,7 @@ describe('Lotes', () => {
     expect(r.body).toMatchObject({ ok: false, etapa: 'PERSISTENCIA' });
     expect(r.body.errores[0].codigoPg).toBe('53100');
     expect(await contar('transacciones')).toBe(0);
-    expect(await contar('usuarios')).toBe(0); // también se deshizo la creación del usuario
+    expect(await contar('usuarios')).toBe(0);
   });
 
   test('transacciones desordenadas → se ordenan antes de la ventana', async () => {
@@ -227,24 +223,32 @@ describe('Lotes', () => {
 });
 
 describe('Límites de la ventana vía API', () => {
-  test('justo 3.000 s → ANOMALÍA; 3.001 s → NORMAL', async () => {
-    const dentro = ['00.000', '01.500', '03.000'].map((s) => txn({ user: 'l1@l.com', date: `2026-09-23T10:00:${s}` }));
-    const fuera = ['00.000', '01.500', '03.001'].map((s) => txn({ user: 'l2@l.com', date: `2026-09-23T10:00:${s}` }));
+  test('noche (ventana 3 s): justo 3.000 s → ANOMALÍA; 3.001 s → NORMAL', async () => {
+    const dentro = ['00.000', '01.500', '03.000'].map((s) => txn({ user: 'l1@l.com', date: `2026-09-23T22:00:${s}` }));
+    const fuera = ['00.000', '01.500', '03.001'].map((s) => txn({ user: 'l2@l.com', date: `2026-09-23T22:00:${s}` }));
     expect((await enviar(dentro)).body.resumen.anomalias).toBe(1);
     expect((await enviar(fuera)).body.resumen.anomalias).toBe(0);
   });
 
-  test('franja que cruza la medianoche: 4 transacciones entre 21:00 y 04:00 → EXCESO_FRANJA_HORARIA', async () => {
-    const t = ['2026-09-23T21:00:00', '2026-09-23T23:59:59', '2026-09-24T00:00:00', '2026-09-24T04:00:00'].map((d) => txn({ user: 'noche@n.com', date: d }));
-    const r = await enviar(t);
-    expect(r.body.aceptadas[3].anomalias[0]).toMatchObject({ tipo: 'EXCESO_FRANJA_HORARIA', cantidad: 4, ventanaSegundos: 32400 });
+  test('mañana (ventana 10 s): justo 10.000 s → ANOMALÍA; 10.001 s → NORMAL', async () => {
+    const dentro = ['00.000', '05.000', '10.000'].map((s) => txn({ user: 'l3@l.com', date: `2026-09-23T10:00:${s}` }));
+    const fuera = ['00.000', '05.000', '10.001'].map((s) => txn({ user: 'l4@l.com', date: `2026-09-23T10:00:${s}` }));
+    const r = await enviar(dentro);
+    expect(r.body.aceptadas[2].anomalias[0]).toMatchObject({ tipo: 'POSIBLE_FRAUDE', cantidad: 3, ventanaSegundos: 10, franja: 'MANANA' });
+    expect((await enviar(fuera)).body.resumen.anomalias).toBe(0);
   });
 
-  test('ventana configurable vía PUT /api/config: se guarda el valor usado', async () => {
+  test('tarde-noche (ventana 6 s): 3 transacciones en 6 s → ANOMALÍA con ventana_segundos = 6', async () => {
+    const r = await enviar(['15:00:00', '15:00:03', '15:00:06'].map((h) => txn({ user: 'tarde@t.com', date: `2026-09-23T${h}` })));
+    expect(r.body.aceptadas[2].anomalias[0]).toMatchObject({ cantidad: 3, ventanaSegundos: 6, franja: 'TARDE_NOCHE' });
+  });
+
+  test('ventana por franja configurable vía PUT /api/config: se guarda el valor usado', async () => {
     const cfg = (await request(app).get('/api/config')).body.reglas;
-    await request(app).put('/api/config').send({ ...cfg, ventanaDeslizante: { segundos: 10, umbral: 2 } }).expect(200);
-    const r = await enviar(['10:00:00', '10:00:09'].map((h) => txn({ user: 'cfg@c.com', date: `2026-09-23T${h}` })));
-    expect(r.body.aceptadas[1].anomalias[0]).toMatchObject({ cantidad: 2, ventanaSegundos: 10 });
+    const franjas = cfg.franjasHorarias.franjas.map((f) => (f.nombre === 'MANANA' ? { ...f, segundosVentana: 20 } : f));
+    await request(app).put('/api/config').send({ ...cfg, ventanaDeslizante: { ...cfg.ventanaDeslizante, umbral: 2 }, franjasHorarias: { ...cfg.franjasHorarias, franjas } }).expect(200);
+    const r = await enviar(['10:00:00', '10:00:19'].map((h) => txn({ user: 'cfg@c.com', date: `2026-09-23T${h}` })));
+    expect(r.body.aceptadas[1].anomalias[0]).toMatchObject({ cantidad: 2, ventanaSegundos: 20 });
   });
 });
 

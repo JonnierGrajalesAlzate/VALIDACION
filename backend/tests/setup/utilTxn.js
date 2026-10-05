@@ -1,11 +1,7 @@
-/**
- * Ayudas para armar transacciones de prueba con hash válido.
- */
 const { calcularHash } = require('../../src/hashing');
 
 let contador = 50000;
 
-/** Crea una transacción válida (firmada) con los cambios indicados. */
 function txn(cambios = {}) {
   contador += 1;
   const base = {
@@ -20,7 +16,6 @@ function txn(cambios = {}) {
   return { ...base, hash: calcularHash(base).hash };
 }
 
-/** Igual que txn() pero aplica `alterar` DESPUÉS de firmar (para romper tipos con hash "correcto"). */
 function txnFirmadaYAlterada(cambios, alterar) {
   const t = txn(cambios);
   return { ...t, ...alterar };

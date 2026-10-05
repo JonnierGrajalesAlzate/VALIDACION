@@ -1,16 +1,10 @@
-/**
- * Algoritmo de ventana deslizante y franjas horarias (lógica pura, sin BD).
- * Las horas se escriben en hora de Bogotá (UTC-5).
- */
-const { detectarAnomalias, simularVentana, ColaVentana } = require('../../src/ventana/ventanaDeslizante');
-const { obtenerFranja } = require('../../src/ventana/franjas');
+const { detectarAnomalias, simularVentana, rangoHistorico, ColaVentana } = require('../../src/ventana/ventanaDeslizante');
+const { obtenerFranja, ventanaPara } = require('../../src/ventana/franjas');
 const reglas = require('../../src/config/reglas');
 
 const BASE = reglas.obtener();
-// Para aislar la regla de fraude, en varias pruebas se apagan las franjas.
 const SIN_FRANJAS = { ...BASE, franjasHorarias: { ...BASE.franjasHorarias, activo: false } };
 
-/** '2026-09-23T10:00:01' (hora Bogotá) → ms */
 const ms = (local) => Date.parse(`${local}-05:00`);
 let siguienteId = 1;
 const txn = (email, local, id = siguienteId++) => ({ id, email, fechaMs: ms(local) });
@@ -38,9 +32,18 @@ describe('Casos obligatorios del enunciado', () => {
     expect(anomalas(res)).toEqual([]);
   });
 
-  test('Ejemplo del enunciado: 10:00:01, 10:00:05, 10:00:09 → NORMAL', () => {
+  test('Ejemplo del enunciado con ventana de 3 s: 10:00:01, 10:00:05, 10:00:09 → NORMAL', () => {
     const res = detectar([txn('d@d.com', '2026-09-23T10:00:01'), txn('d@d.com', '2026-09-23T10:00:05'), txn('d@d.com', '2026-09-23T10:00:09')]);
     expect(anomalas(res)).toEqual([]);
+  });
+});
+
+describe('Casos obligatorios con la ventana de la franja (10:00 → MAÑANA, 10 s)', () => {
+  test('Caso 1 → ANOMALÍA en la tercera; Caso 2 y Caso 3 → NORMAL', () => {
+    const c1 = ['10:00:01', '10:00:02', '10:00:03'].map((h) => txn('b1@b.com', `2026-09-23T${h}`));
+    const c2 = ['10:00:01', '10:00:10', '10:01:20'].map((h) => txn('c1@c.com', `2026-09-23T${h}`));
+    const c3 = [txn('x1@x.com', '2026-09-23T10:00:01'), txn('y1@y.com', '2026-09-23T10:00:02'), txn('z1@z.com', '2026-09-23T10:00:03')];
+    expect(anomalas(detectar([...c1, ...c2, ...c3], { r: BASE }))).toEqual([c1[2].id]);
   });
 });
 
@@ -108,7 +111,7 @@ describe('Niveles', () => {
   });
 });
 
-describe('Franjas horarias', () => {
+describe('Ventana según la franja horaria', () => {
   const franjas = BASE.franjasHorarias.franjas;
   const nombre = (local) => obtenerFranja(ms(local), franjas).nombre;
 
@@ -116,52 +119,78 @@ describe('Franjas horarias', () => {
     expect(nombre('2026-09-23T05:00:00')).toBe('NOCHE_MADRUGADA');
     expect(nombre('2026-09-23T05:00:01')).toBe('MANANA');
     expect(nombre('2026-09-23T12:00:00')).toBe('MANANA');
-    expect(nombre('2026-09-23T12:00:00.999')).toBe('MANANA'); // se trunca al segundo
+    expect(nombre('2026-09-23T12:00:00.999')).toBe('MANANA');
     expect(nombre('2026-09-23T12:00:01')).toBe('TARDE_NOCHE');
     expect(nombre('2026-09-23T20:00:00')).toBe('TARDE_NOCHE');
     expect(nombre('2026-09-23T20:00:01')).toBe('NOCHE_MADRUGADA');
     expect(nombre('2026-09-23T00:00:00')).toBe('NOCHE_MADRUGADA');
   });
 
-  test('la noche cruza la medianoche: 23:00 del 23 y 02:00 del 24 son la MISMA ocurrencia', () => {
-    const a = obtenerFranja(ms('2026-09-23T23:00:00'), franjas);
-    const b = obtenerFranja(ms('2026-09-24T02:00:00'), franjas);
-    expect(a.clave).toBe(b.clave);
-    expect(a.clave).toBe('NOCHE_MADRUGADA|2026-09-23');
-    expect(a.duracionSegundos).toBe(9 * 3600);
+  test('tamaño de la ventana: mañana 10 s, tarde-noche 6 s, noche-madrugada 3 s', () => {
+    expect(ventanaPara(ms('2026-09-23T08:00:00'), BASE)).toEqual({ segundos: 10, franja: 'MANANA' });
+    expect(ventanaPara(ms('2026-09-23T15:00:00'), BASE)).toEqual({ segundos: 6, franja: 'TARDE_NOCHE' });
+    expect(ventanaPara(ms('2026-09-23T23:00:00'), BASE)).toEqual({ segundos: 3, franja: 'NOCHE_MADRUGADA' });
+    expect(ventanaPara(ms('2026-09-24T02:00:00'), BASE)).toEqual({ segundos: 3, franja: 'NOCHE_MADRUGADA' });
+    expect(ventanaPara(ms('2026-09-23T08:00:00'), SIN_FRANJAS)).toEqual({ segundos: 3, franja: null });
   });
 
-  test('4 transacciones en la misma noche (cruzando medianoche) → la 4.ª excede el límite de 3', () => {
-    const t = ['2026-09-23T21:00:00', '2026-09-23T23:30:00', '2026-09-24T01:00:00', '2026-09-24T04:59:59'].map((f) => txn('m@m.com', f));
+  test('límite exacto de cada ventana: justo en N s → ANOMALÍA; N s + 1 ms → NORMAL', () => {
+    for (const [hora, n] of [['08', 10], ['15', 6], ['23', 3]]) {
+      const base = ms(`2026-09-23T${hora}:00:00`);
+      const grupo = (fin) => [0, 1, fin].map((d) => ({ id: siguienteId++, email: `lim${hora}@x.com`, fechaMs: base + d }));
+      const dentro = grupo(n * 1000);
+      const res = detectar(dentro, { r: BASE });
+      expect(anomalas(res)).toEqual([dentro[2].id]);
+      expect(res.get(dentro[2].id).anomalias[0]).toMatchObject({ ventanaSegundos: n, cantidad: 3 });
+      expect(anomalas(detectar(grupo(n * 1000 + 1), { r: BASE }))).toEqual([]);
+    }
+  });
+
+  test('las mismas 3 transacciones (cada 4 s) son ANOMALÍA en la mañana y NORMAL en la noche', () => {
+    const manana = ['10:00:01', '10:00:05', '10:00:09'].map((h) => txn('mn@m.com', `2026-09-23T${h}`));
+    const noche = ['22:00:01', '22:00:05', '22:00:09'].map((h) => txn('nc@n.com', `2026-09-23T${h}`));
+    const res = detectar([...manana, ...noche], { r: BASE });
+    expect(anomalas(res)).toEqual([manana[2].id]);
+    expect(res.get(manana[2].id).anomalias[0]).toMatchObject({ tipo: 'POSIBLE_FRAUDE', franja: 'MANANA', ventanaSegundos: 10 });
+  });
+
+  test('tarde-noche: 3 en 5 s → ANOMALÍA; 3 en 7 s → NORMAL', () => {
+    const juntas = ['15:00:00', '15:00:03', '15:00:05'].map((h) => txn('t1@t.com', `2026-09-23T${h}`));
+    const separadas = ['15:00:00', '15:00:04', '15:00:07'].map((h) => txn('t2@t.com', `2026-09-23T${h}`));
+    const res = detectar([...juntas, ...separadas], { r: BASE });
+    expect(anomalas(res)).toEqual([juntas[2].id]);
+  });
+
+  test('la ventana la decide la hora de la transacción que LLEGA (cambio de franja)', () => {
+    const t = ['04:59:55', '04:59:58', '05:00:03'].map((h) => txn('cambio@c.com', `2026-09-23T${h}`));
     const res = detectar(t, { r: BASE });
-    expect(anomalas(res)).toEqual([t[3].id]);
-    expect(res.get(t[3].id).anomalias[0]).toMatchObject({ tipo: 'EXCESO_FRANJA_HORARIA', franja: 'NOCHE_MADRUGADA', cantidad: 4, limite: 3, nivel: 'BAJO' });
+    expect(anomalas(res)).toEqual([t[2].id]);
+    expect(res.get(t[2].id).traza).toMatchObject({ ventanaSegundos: 10, franja: 'MANANA', conteo: 3 });
+
+    const u = ['19:59:55', '19:59:58', '20:00:03'].map((h) => txn('cambio2@c.com', `2026-09-23T${h}`));
+    const res2 = detectar(u, { r: BASE });
+    expect(anomalas(res2)).toEqual([]);
+    expect(res2.get(u[2].id).traza).toMatchObject({ ventanaSegundos: 3, conteo: 1 });
   });
 
-  test('3 en la noche del 23 y 1 en la noche del 24 → NORMAL (ocurrencias distintas)', () => {
-    const t = ['2026-09-23T21:00:00', '2026-09-23T22:00:00', '2026-09-24T01:00:00', '2026-09-24T21:00:00'].map((f) => txn('n@n.com', f));
-    expect(anomalas(detectar(t, { r: BASE }))).toEqual([]);
-  });
-
-  test('mañana: la transacción 11 excede el límite de 10', () => {
-    const t = Array.from({ length: 11 }, (_, i) => txn('o@o.com', `2026-09-23T${String(6 + Math.floor(i / 2)).padStart(2, '0')}:${i % 2 ? '30' : '00'}:00`));
+  test('cruce de medianoche: la noche sigue usando la ventana de 3 s', () => {
+    const t = ['2026-09-23T23:59:58', '2026-09-24T00:00:00', '2026-09-24T00:00:01'].map((f) => txn('medianoche@m.com', f));
     const res = detectar(t, { r: BASE });
-    expect(anomalas(res)).toEqual([t[10].id]);
+    expect(anomalas(res)).toEqual([t[2].id]);
+    expect(res.get(t[2].id).anomalias[0]).toMatchObject({ franja: 'NOCHE_MADRUGADA', ventanaSegundos: 3 });
   });
 
-  test('una transacción puede disparar los DOS tipos a la vez', () => {
-    const t = ['2026-09-23T22:00:00', '2026-09-23T22:30:00', '2026-09-23T23:00:00', '2026-09-23T23:00:01', '2026-09-23T23:00:02'].map((f) => txn('p@p.com', f));
-    const tipos = detectar(t, { r: BASE }).get(t[4].id).anomalias.map((a) => a.tipo).sort();
-    expect(tipos).toEqual(['EXCESO_FRANJA_HORARIA', 'POSIBLE_FRAUDE']);
+  test('ventana por franja configurable', () => {
+    const r = { ...BASE, franjasHorarias: { ...BASE.franjasHorarias, franjas: franjas.map((f) => ({ ...f, segundosVentana: f.nombre === 'NOCHE_MADRUGADA' ? 60 : f.segundosVentana })) } };
+    const t = ['23:00:00', '23:00:30', '23:00:59'].map((h) => txn('cfg@c.com', `2026-09-23T${h}`));
+    expect(detectar(t, { r }).get(t[2].id).anomalias[0]).toMatchObject({ ventanaSegundos: 60, cantidad: 3 });
   });
 
-  test('modo MOVIL: cuenta en una ventana móvil de N segundos', () => {
-    const r = { ...BASE, franjasHorarias: { ...BASE.franjasHorarias, modo: 'MOVIL', segundosVentanaMovil: 3600 } };
-    // Noche (límite 3): 4 en menos de 1 hora → excede; separadas > 1 h → no.
-    const juntas = ['2026-09-23T21:00:00', '2026-09-23T21:10:00', '2026-09-23T21:20:00', '2026-09-23T21:30:00'].map((f) => txn('q@q.com', f));
-    expect(anomalas(detectar(juntas, { r }))).toEqual([juntas[3].id]);
-    const separadas = ['2026-09-23T21:00:00', '2026-09-23T22:10:00', '2026-09-23T23:20:00', '2026-09-24T00:30:00'].map((f) => txn('s@s.com', f));
-    expect(anomalas(detectar(separadas, { r }))).toEqual([]);
+  test('anomalía entre dos lotes en la mañana: el histórico se carga con la ventana más grande', () => {
+    expect(rangoHistorico([ms('2026-09-23T10:00:20')], BASE)).toEqual({ desdeMs: ms('2026-09-23T10:00:10'), hastaMs: ms('2026-09-23T10:00:30') });
+    const historico = [txn('lote@l.com', '2026-09-23T10:00:11'), txn('lote@l.com', '2026-09-23T10:00:15')];
+    const nueva = txn('lote@l.com', '2026-09-23T10:00:20');
+    expect(detectar([nueva], { historico, r: BASE }).get(nueva.id).anomalias[0]).toMatchObject({ cantidad: 3, ventanaSegundos: 10 });
   });
 });
 
@@ -185,6 +214,6 @@ describe('Estructuras', () => {
     const inicio = Date.now();
     const res = detectar(t);
     expect(Date.now() - inicio).toBeLessThan(2000);
-    expect(anomalas(res)).toHaveLength(10000 - 2); // cada 1 s, siempre hay 4 en 3 s desde la 3.ª
+    expect(anomalas(res)).toHaveLength(10000 - 2);
   });
 });

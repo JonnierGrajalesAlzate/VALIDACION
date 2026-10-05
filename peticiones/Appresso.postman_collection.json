@@ -151,6 +151,29 @@
           }
         },
         {
+          "name": "Anomalías NUEVAS (sin revisar)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/anomalias?estadoRevision=NUEVA",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "anomalias"
+              ],
+              "query": [
+                {
+                  "key": "estadoRevision",
+                  "value": "NUEVA"
+                }
+              ]
+            }
+          }
+        },
+        {
           "name": "Detalle de una anomalía (línea de tiempo)",
           "request": {
             "method": "GET",
@@ -280,6 +303,102 @@
             "body": {
               "mode": "raw",
               "raw": "{\n  \"estado\": \"ACTIVO\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Abrir revisión de una anomalía",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/anomalias/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "anomalias",
+                "1"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estadoRevision\": \"ABIERTA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Marcar anomalía como REVISADA (con nota)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/anomalias/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "anomalias",
+                "1"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estadoRevision\": \"REVISADA\",\n  \"nota\": \"Cliente confirmó que no reconoce las compras\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Descartar anomalía (falso positivo)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/anomalias/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "anomalias",
+                "1"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estadoRevision\": \"DESCARTADA\",\n  \"nota\": \"Pedido grupal en la barra\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

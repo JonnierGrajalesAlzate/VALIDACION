@@ -1,8 +1,3 @@
-/**
- * /api/usuarios
- *   GET   /     → usuarios con su cantidad de transacciones y anomalías
- *   PATCH /:id  → cambiar estado { "estado": "ACTIVO" | "INACTIVO" }
- */
 const { Router } = require('express');
 const { z } = require('zod');
 const usuariosRepo = require('../repositorios/usuarios.repo');
@@ -44,7 +39,6 @@ router.get('/', async (req, res) => {
   res.json({ ok: true, requestId: req.requestId, total: filas.length, datos: filas.map(aUsuarioApi) });
 });
 
-// Estricto: solo "estado", sin coerción ni campos extra.
 const esquemaPatch = z.strictObject({ estado: z.enum(['ACTIVO', 'INACTIVO']) });
 
 router.patch('/:id', async (req, res) => {

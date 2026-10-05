@@ -1,8 +1,3 @@
-/**
- * GET /api/health → estado del servidor y de la conexión a PostgreSQL.
- * Responde 200 si todo está bien y 503 si la BD no está disponible o le
- * falta alguna tabla/columna (con el detalle exacto de qué falta).
- */
 const { Router } = require('express');
 const env = require('../config/env');
 const { verificarEsquema } = require('../db/verificarEsquema');

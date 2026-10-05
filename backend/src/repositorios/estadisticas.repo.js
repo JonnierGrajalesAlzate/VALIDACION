@@ -1,15 +1,5 @@
-/**
- * Métricas del dashboard. TODO se calcula con SQL en PostgreSQL
- * (COUNT ... FILTER, GROUP BY, date_trunc, EXTRACT), no en JavaScript.
- *
- * Zona horaria: "hoy", "esta semana" y la hora del mapa de calor se
- * calculan en la zona del negocio ($1 = TZ_NEGOCIO). Sin esto, a las
- * 8 p. m. de Bogotá (01:00 UTC) "hoy" ya sería mañana.
- *   fecha_txn AT TIME ZONE 'America/Bogota' → hora local sin zona
- *
- * Los periodos se miden por la fecha de la TRANSACCIÓN (fecha_txn).
- */
 const { consultar } = require('../db/pool');
+const { horaASegundos } = require('../config/reglas');
 
 async function tarjetas(tz) {
   const r = await consultar(
@@ -23,6 +13,16 @@ async function tarjetas(tz) {
        (SELECT COUNT(*) FROM an, ahora WHERE date_trunc('day',   an.fl) = date_trunc('day',   ahora.l))::int AS anomalias_hoy,
        (SELECT COUNT(*) FROM an, ahora WHERE date_trunc('week',  an.fl) = date_trunc('week',  ahora.l))::int AS anomalias_semana,
        (SELECT COUNT(*) FROM an, ahora WHERE date_trunc('month', an.fl) = date_trunc('month', ahora.l))::int AS anomalias_mes,
+       (SELECT COUNT(*) FROM t, ahora WHERE t.fl >= date_trunc('day',   ahora.l) - interval '1 day'   AND t.fl < ahora.l - interval '1 day')::int   AS transacciones_ayer,
+       (SELECT COUNT(*) FROM t, ahora WHERE t.fl >= date_trunc('week',  ahora.l) - interval '1 week'  AND t.fl < ahora.l - interval '1 week')::int  AS transacciones_semana_anterior,
+       (SELECT COUNT(*) FROM t, ahora WHERE t.fl >= date_trunc('month', ahora.l) - interval '1 month' AND t.fl < ahora.l - interval '1 month')::int AS transacciones_mes_anterior,
+       (SELECT COUNT(*) FROM an, ahora WHERE an.fl >= date_trunc('day',   ahora.l) - interval '1 day'   AND an.fl < ahora.l - interval '1 day')::int   AS anomalias_ayer,
+       (SELECT COUNT(*) FROM an, ahora WHERE an.fl >= date_trunc('week',  ahora.l) - interval '1 week'  AND an.fl < ahora.l - interval '1 week')::int  AS anomalias_semana_anterior,
+       (SELECT COUNT(*) FROM an, ahora WHERE an.fl >= date_trunc('month', ahora.l) - interval '1 month' AND an.fl < ahora.l - interval '1 month')::int AS anomalias_mes_anterior,
+       (SELECT COUNT(*) FROM anomalias WHERE estado_revision = 'NUEVA')::int      AS revision_nuevas,
+       (SELECT COUNT(*) FROM anomalias WHERE estado_revision = 'ABIERTA')::int    AS revision_abiertas,
+       (SELECT COUNT(*) FROM anomalias WHERE estado_revision = 'REVISADA')::int   AS revision_revisadas,
+       (SELECT COUNT(*) FROM anomalias WHERE estado_revision = 'DESCARTADA')::int AS revision_descartadas,
        (SELECT COUNT(*) FROM t)::int  AS transacciones_total,
        (SELECT COUNT(*) FROM an)::int AS anomalias_total,
        (SELECT COUNT(*) FROM t WHERE estado = 'ANOMALA')::int AS transacciones_anomalas,
@@ -35,11 +35,9 @@ async function tarjetas(tz) {
     { fn: 'estadisticas.tarjetas' },
   );
   const f = r.rows[0];
-  // ROUND(...) devuelve NUMERIC; ya llega como Number por el type parser de pool.js.
   return f;
 }
 
-/** Usuarios con más anomalías (usuarios "recurrentes"). */
 async function usuariosRecurrentes(limite = 10) {
   const r = await consultar(
     `SELECT u.id, u.email, u.estado,
@@ -61,7 +59,6 @@ async function usuariosRecurrentes(limite = 10) {
   return r.rows;
 }
 
-/** "Casos más frecuentes": combinaciones tipo + nivel + método de pago. */
 async function casosFrecuentes(limite = 10) {
   const r = await consultar(
     `SELECT a.tipo, a.nivel, t.metodo_pago, COUNT(*)::int AS cantidad,
@@ -76,24 +73,110 @@ async function casosFrecuentes(limite = 10) {
   return r.rows;
 }
 
-/** Anomalías por día y tipo (últimos `dias` días con datos). */
 async function evolucion(tz, dias = 90) {
   const r = await consultar(
-    `SELECT to_char(date_trunc('day', t.fecha_txn AT TIME ZONE $1), 'YYYY-MM-DD') AS dia,
-            COUNT(*) FILTER (WHERE a.tipo = 'POSIBLE_FRAUDE')::int        AS posible_fraude,
-            COUNT(*) FILTER (WHERE a.tipo = 'EXCESO_FRANJA_HORARIA')::int AS exceso_franja,
-            COUNT(*)::int AS total
-       FROM anomalias a JOIN transacciones t ON t.id = a.transaccion_id
-      WHERE t.fecha_txn >= (SELECT MAX(fecha_txn) FROM transacciones) - make_interval(days => $2)
-      GROUP BY 1
-      ORDER BY 1`,
+    `WITH d AS (
+       SELECT (t.fecha_txn AT TIME ZONE $1)::date AS dia, COUNT(*)::int AS total
+         FROM anomalias a JOIN transacciones t ON t.id = a.transaccion_id
+        WHERE t.fecha_txn >= (SELECT MAX(fecha_txn) FROM transacciones) - make_interval(days => $2)
+        GROUP BY 1
+     ),
+     s AS (
+       SELECT g::date AS dia, COALESCE(d.total, 0) AS total
+         FROM generate_series((SELECT MIN(dia) FROM d), (SELECT MAX(dia) FROM d), interval '1 day') AS g
+         LEFT JOIN d ON d.dia = g::date
+     ),
+     m AS (
+       SELECT dia, total,
+              AVG(total) OVER (ORDER BY dia ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS media_movil,
+              AVG(total) OVER (ORDER BY dia ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING) AS promedio_previo,
+              COUNT(*)   OVER (ORDER BY dia ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING) AS dias_previos
+         FROM s
+     )
+     SELECT to_char(dia, 'YYYY-MM-DD') AS dia, total,
+            ROUND(media_movil, 2) AS media_movil,
+            ROUND(COALESCE(promedio_previo, 0), 2) AS promedio_previo,
+            (dias_previos >= 3 AND total >= 3 AND total >= 2 * COALESCE(promedio_previo, 0)) AS pico
+       FROM m
+      ORDER BY dia`,
     [tz, dias],
     { fn: 'estadisticas.evolucion' },
   );
   return r.rows;
 }
 
-/** Mapa de calor: día de la semana (1=lunes … 7=domingo) × hora local. */
+async function porHora(tz) {
+  const r = await consultar(
+    `SELECT h.hora,
+            COALESCE(tx.n, 0)::int AS transacciones,
+            COALESCE(an.n, 0)::int AS anomalias
+       FROM generate_series(0, 23) AS h(hora)
+       LEFT JOIN (SELECT EXTRACT(HOUR FROM fecha_txn AT TIME ZONE $1)::int AS hora, COUNT(*) AS n
+                    FROM transacciones GROUP BY 1) tx ON tx.hora = h.hora
+       LEFT JOIN (SELECT EXTRACT(HOUR FROM t.fecha_txn AT TIME ZONE $1)::int AS hora, COUNT(*) AS n
+                    FROM anomalias a JOIN transacciones t ON t.id = a.transaccion_id GROUP BY 1) an ON an.hora = h.hora
+      ORDER BY h.hora`,
+    [tz],
+    { fn: 'estadisticas.porHora' },
+  );
+  return r.rows;
+}
+
+async function porFranja(tz, franjas) {
+  const r = await consultar(
+    `WITH f AS (
+       SELECT * FROM unnest($2::text[], $3::int[], $4::int[]) WITH ORDINALITY AS f(nombre, desde, hasta, orden)
+     ),
+     t AS (
+       SELECT tr.id, tr.usuario_id, tr.estado, COALESCE(an.n, 0) AS anomalias,
+              FLOOR(EXTRACT(EPOCH FROM (tr.fecha_txn AT TIME ZONE $1)::time))::int AS seg
+         FROM transacciones tr
+         LEFT JOIN (SELECT transaccion_id, COUNT(*) AS n FROM anomalias GROUP BY 1) an ON an.transaccion_id = tr.id
+     )
+     SELECT f.nombre,
+            COUNT(t.id)::int AS transacciones,
+            COUNT(t.id) FILTER (WHERE t.estado = 'ANOMALA')::int AS transacciones_anomalas,
+            COALESCE(SUM(t.anomalias), 0)::int AS anomalias,
+            COUNT(DISTINCT t.usuario_id)::int AS usuarios
+       FROM f
+       LEFT JOIN t ON CASE WHEN f.desde <= f.hasta THEN t.seg BETWEEN f.desde AND f.hasta
+                           ELSE t.seg >= f.desde OR t.seg <= f.hasta END
+      GROUP BY f.nombre, f.orden
+      ORDER BY f.orden`,
+    [tz, franjas.map((f) => f.nombre), franjas.map((f) => horaASegundos(f.desde)), franjas.map((f) => horaASegundos(f.hasta))],
+    { fn: 'estadisticas.porFranja' },
+  );
+  return r.rows;
+}
+
+async function porCantidad() {
+  const r = await consultar(
+    `SELECT LEAST(a.cantidad_transacciones, 6)::int AS grupo,
+            COUNT(*)::int AS anomalias,
+            COUNT(DISTINCT t.usuario_id)::int AS usuarios
+       FROM anomalias a JOIN transacciones t ON t.id = a.transaccion_id
+      GROUP BY 1
+      ORDER BY 1`,
+    [],
+    { fn: 'estadisticas.porCantidad' },
+  );
+  return r.rows;
+}
+
+async function rafagaMayor() {
+  const r = await consultar(
+    `SELECT a.id, a.cantidad_transacciones, a.ventana_segundos, u.email, t.fecha_txn
+       FROM anomalias a
+       JOIN transacciones t ON t.id = a.transaccion_id
+       JOIN usuarios u ON u.id = t.usuario_id
+      ORDER BY a.cantidad_transacciones DESC, t.fecha_txn DESC
+      LIMIT 1`,
+    [],
+    { fn: 'estadisticas.rafagaMayor' },
+  );
+  return r.rows[0] || null;
+}
+
 async function mapaCalor(tz) {
   const r = await consultar(
     `SELECT EXTRACT(ISODOW FROM t.fecha_txn AT TIME ZONE $1)::int AS dia_semana,
@@ -128,7 +211,6 @@ async function porTipo() {
   return r.rows;
 }
 
-/** Por método de pago: total de transacciones, anómalas y anomalías. */
 async function porMetodoPago() {
   const r = await consultar(
     `SELECT t.metodo_pago,
@@ -146,4 +228,6 @@ async function porMetodoPago() {
   return r.rows;
 }
 
-module.exports = { tarjetas, usuariosRecurrentes, casosFrecuentes, evolucion, mapaCalor, porNivel, porTipo, porMetodoPago };
+module.exports = {
+  tarjetas, usuariosRecurrentes, casosFrecuentes, evolucion, mapaCalor, porHora, porFranja, porCantidad, rafagaMayor, porNivel, porTipo, porMetodoPago,
+};

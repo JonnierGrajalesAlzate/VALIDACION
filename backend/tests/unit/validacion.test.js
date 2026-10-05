@@ -1,6 +1,3 @@
-/**
- * Validación estricta del esquema de una transacción (sin BD).
- */
 const { validarTransaccion } = require('../../src/validacion/esquemaTransaccion');
 const { parsearJsonConservandoNumeros } = require('../../src/validacion/jsonCrudo');
 const { parsearFechaIso } = require('../../src/validacion/fechas');
@@ -19,7 +16,6 @@ test('transacción válida → datos normalizados', () => {
   expect(r.datos.email).toBe('aa@aa.com');
   expect(r.datos.nombre).toBe('aa');
   expect(r.datos.hash).toBe(HASH);
-  // Sin zona → America/Bogota (UTC-5)
   expect(new Date(r.datos.fechaMs).toISOString()).toBe('2026-09-23T15:30:01.120Z');
 });
 

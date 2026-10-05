@@ -1,6 +1,3 @@
-/**
- * Endpoints de consulta y administración.
- */
 const request = require('supertest');
 const { crearApp } = require('../../src/app');
 const { limpiarBd, cerrarBd, restablecerReglas, pool } = require('../setup/utilBd');
@@ -65,7 +62,6 @@ describe('GET /api/usuarios y PATCH /api/usuarios/:id', () => {
     const r = await request(app).patch(`/api/usuarios/${id}`).send({ estado: 'INACTIVO' });
     expect(r.status).toBe(200);
     expect(r.body.usuario.estado).toBe('INACTIVO');
-    // Ahora una transacción de c@c.com se rechaza
     const t = await request(app).post('/api/transacciones').send(txn({ user: 'c@c.com', date: '2026-09-24T10:00:00' }));
     expect(t.body.errores[0].codigo).toBe('USUARIO_INACTIVO');
     await request(app).patch(`/api/usuarios/${id}`).send({ estado: 'ACTIVO' }).expect(200);
@@ -116,12 +112,12 @@ describe('GET /api/estadisticas', () => {
     expect(r.status).toBe(200);
     expect(r.body.tarjetas).toMatchObject({ transaccionesAnomalas: 1, usuariosAfectados: 1, valorSospechoso: 50000 });
     expect(r.body.tarjetas.porcentajeAnomalas).toBeCloseTo(16.67, 2);
-    expect(r.body.tarjetas.anomalias.mes).toBe(1); // 23/09/2026 está en el mes de "hoy" (septiembre de 2026)
+    expect(r.body.tarjetas.anomalias.total).toBe(1);
     expect(r.body.porTipo).toEqual([{ tipo: 'POSIBLE_FRAUDE', cantidad: 1 }]);
-    expect(r.body.mapaCalor).toEqual([{ diaSemana: 3, hora: 10, cantidad: 1 }]); // miércoles 10 a. m.
+    expect(r.body.mapaCalor).toEqual([{ diaSemana: 3, hora: 10, cantidad: 1 }]);
     expect(r.body.usuariosRecurrentes[0]).toMatchObject({ email: 'b@b.com', anomalias: 1 });
     expect(r.body.casosFrecuentes[0]).toMatchObject({ tipo: 'POSIBLE_FRAUDE', nivel: 'BAJO', metodoPago: 'Nequi', cantidad: 1 });
-    expect(r.body.evolucion).toEqual([{ dia: '2026-09-23', posibleFraude: 1, excesoFranja: 0, total: 1 }]);
+    expect(r.body.evolucion).toEqual([{ dia: '2026-09-23', total: 1, mediaMovil: 1, promedioPrevio: 0, pico: false }]);
   });
 });
 

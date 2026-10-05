@@ -1,9 +1,3 @@
-/**
- * Muestra la respuesta de la API de forma legible:
- *  - aceptada / rechazada / anomalía detectada (ícono + texto, no solo color)
- *  - cada error campo por campo: etapa, código, mensaje, recibido y esperado
- *  - el requestId, para buscarlo en backend/logs/app.log
- */
 import { Link } from 'react-router-dom';
 import { NOMBRE_TIPO, fmtFecha } from '../util/formato';
 
@@ -52,7 +46,6 @@ export default function PanelResultado({ resultado }) {
   else if (cuerpo.ok && rechazadas.length) { clase = 'alerta'; titulo = 'Lote parcialmente aceptado'; icono = '⚠'; }
   else if (cuerpo.ok) { clase = 'ok'; titulo = aceptadas.length > 1 ? 'Lote aceptado' : 'Aceptada'; icono = '✓'; }
 
-  // Errores generales (sin aceptadas/rechazadas): parseo, recepción, BD...
   const erroresGenerales = !cuerpo.aceptadas && cuerpo.errores ? cuerpo.errores.map((e) => ({ etapa: cuerpo.etapa, ...e })) : [];
 
   return (
@@ -78,6 +71,7 @@ export default function PanelResultado({ resultado }) {
                   <td><span className={`insignia ${a.estado === 'ANOMALA' ? 'alerta' : 'ok'}`}>{a.estado}</span></td>
                   <td className="mono">
                     {a.ventana ? `${a.ventana.conteo} en ${a.ventana.ventanaSegundos} s` : '—'}
+                    {a.ventana?.franja ? <div className="muted">{a.ventana.franja}</div> : null}
                     {a.ventana?.salieron?.length ? <div className="muted">salieron: {a.ventana.salieron.join(', ')}</div> : null}
                   </td>
                   <td>
@@ -85,7 +79,7 @@ export default function PanelResultado({ resultado }) {
                     {a.anomalias.map((an) => (
                       <div key={an.tipo}>
                         <Link to={`/anomalias/${an.id}`}>{NOMBRE_TIPO[an.tipo]}</Link> · {an.nivel} · {an.cantidad} txn
-                        {an.franja ? ` (franja ${an.franja}, límite ${an.limite})` : ` en ${an.ventanaSegundos} s`}
+                        {` en ${an.ventanaSegundos} s`}{an.franja ? ` (franja ${an.franja})` : ''}
                       </div>
                     ))}
                   </td>

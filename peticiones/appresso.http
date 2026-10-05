@@ -14,7 +14,7 @@
 ### Salud del servidor y de PostgreSQL
 GET {{api}}/health
 
-### Configuración vigente (ventana, umbral, franjas...)
+### Configuración vigente (umbral, ventana por franja...)
 GET {{api}}/config
 
 ###############################################################################
@@ -182,6 +182,33 @@ GET {{api}}/anomalias?tipo=POSIBLE_FRAUDE&nivel=BAJO
 ### Detalle de una anomalía con línea de tiempo (cambie el id)
 GET {{api}}/anomalias/1
 
+### Anomalías pendientes de revisar (NUEVA | ABIERTA | REVISADA | DESCARTADA)
+GET {{api}}/anomalias?estadoRevision=NUEVA
+
+### Revisión: abrir una anomalía (cambie el id)
+PATCH {{api}}/anomalias/1
+Content-Type: application/json
+
+{ "estadoRevision": "ABIERTA" }
+
+### Revisión: cerrar como REVISADA (fraude confirmado) con nota
+PATCH {{api}}/anomalias/1
+Content-Type: application/json
+
+{ "estadoRevision": "REVISADA", "nota": "Cliente confirmó que no reconoce las compras" }
+
+### Revisión: DESCARTADA (falso positivo)
+PATCH {{api}}/anomalias/1
+Content-Type: application/json
+
+{ "estadoRevision": "DESCARTADA", "nota": "Pedido grupal en la barra" }
+
+### Revisión: NUEVA no se puede asignar a mano → 422
+PATCH {{api}}/anomalias/1
+Content-Type: application/json
+
+{ "estadoRevision": "NUEVA" }
+
 ### Estadísticas del dashboard
 GET {{api}}/estadisticas
 
@@ -192,20 +219,18 @@ DELETE {{api}}/transacciones/10001
 # 7. Configuración (PUT exige el objeto COMPLETO; copie el de GET /config)
 ###############################################################################
 
-### Ventana de 5 s y umbral 4
+### Mañana con ventana de 15 s y umbral 4
 PUT {{api}}/config
 Content-Type: application/json
 
 {
-  "ventanaDeslizante": { "segundos": 5, "umbral": 4 },
+  "ventanaDeslizante": { "segundos": 3, "umbral": 4 },
   "franjasHorarias": {
     "activo": true,
-    "modo": "OCURRENCIA",
-    "segundosVentanaMovil": 3600,
     "franjas": [
-      { "nombre": "MANANA", "desde": "05:00:01", "hasta": "12:00:00", "limite": 10 },
-      { "nombre": "TARDE_NOCHE", "desde": "12:00:01", "hasta": "20:00:00", "limite": 6 },
-      { "nombre": "NOCHE_MADRUGADA", "desde": "20:00:01", "hasta": "05:00:00", "limite": 3 }
+      { "nombre": "MANANA", "desde": "05:00:01", "hasta": "12:00:00", "segundosVentana": 15 },
+      { "nombre": "TARDE_NOCHE", "desde": "12:00:01", "hasta": "20:00:00", "segundosVentana": 6 },
+      { "nombre": "NOCHE_MADRUGADA", "desde": "20:00:01", "hasta": "05:00:00", "segundosVentana": 3 }
     ]
   },
   "niveles": { "medioDesdeExcedente": 1, "altoDesdeExcedente": 3 },
@@ -214,7 +239,7 @@ Content-Type: application/json
   "lote": { "maxTransacciones": 1000 }
 }
 
-### Volver a los valores por defecto (3 s, umbral 3)
+### Volver a los valores por defecto (ventanas 10 / 6 / 3 s, umbral 3)
 PUT {{api}}/config
 Content-Type: application/json
 
@@ -222,12 +247,10 @@ Content-Type: application/json
   "ventanaDeslizante": { "segundos": 3, "umbral": 3 },
   "franjasHorarias": {
     "activo": true,
-    "modo": "OCURRENCIA",
-    "segundosVentanaMovil": 3600,
     "franjas": [
-      { "nombre": "MANANA", "desde": "05:00:01", "hasta": "12:00:00", "limite": 10 },
-      { "nombre": "TARDE_NOCHE", "desde": "12:00:01", "hasta": "20:00:00", "limite": 6 },
-      { "nombre": "NOCHE_MADRUGADA", "desde": "20:00:01", "hasta": "05:00:00", "limite": 3 }
+      { "nombre": "MANANA", "desde": "05:00:01", "hasta": "12:00:00", "segundosVentana": 10 },
+      { "nombre": "TARDE_NOCHE", "desde": "12:00:01", "hasta": "20:00:00", "segundosVentana": 6 },
+      { "nombre": "NOCHE_MADRUGADA", "desde": "20:00:01", "hasta": "05:00:00", "segundosVentana": 3 }
     ]
   },
   "niveles": { "medioDesdeExcedente": 1, "altoDesdeExcedente": 3 },

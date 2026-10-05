@@ -1,15 +1,3 @@
-/**
- * Middleware GLOBAL de errores de Express.
- *
- * Garantiza que NINGÚN error salga como un 500 genérico sin explicación:
- * - ErrorApp (errores controlados): se responden con su etapa, código y detalle.
- * - Errores de PostgreSQL que se escaparon: se traducen.
- * - Cualquier otro error: 500 con la etapa en la que estaba el proceso, y
- *   en el log el stack trace COMPLETO.
- *
- * Estructura fija de la respuesta de error:
- * { ok:false, requestId, etapa, errores:[{ idTxn, campo, codigo, mensaje, recibido, esperado }] }
- */
 const { ErrorApp } = require('../errores/ErrorApp');
 const { esErrorPg } = require('../errores/traductorPg');
 const { envolverErrorPg } = require('../db/pool');
@@ -19,7 +7,6 @@ const env = require('../config/env');
 
 const log = crearLogger(__filename);
 
-/** 404 para rutas que no existen (se registra después de todas las rutas). */
 function rutaNoEncontrada(req, res, next) {
   next(new ErrorApp({
     etapa: 'RECEPCION',
@@ -28,19 +15,16 @@ function rutaNoEncontrada(req, res, next) {
   }));
 }
 
-// Express reconoce un middleware de errores porque tiene 4 parámetros.
 // eslint-disable-next-line no-unused-vars
 function manejadorErrores(err, req, res, next) {
   const ctx = obtenerContexto();
   let error = err;
 
   if (!(error instanceof ErrorApp) && esErrorPg(error)) {
-    // envolverErrorPg ya deja el log con el código/mensaje originales de PG.
     error = envolverErrorPg(error, { fn: 'manejadorErrores' });
   }
 
   if (!(error instanceof ErrorApp)) {
-    // Error inesperado (bug): log con stack completo y la etapa en curso.
     const etapa = ctx.etapa || 'DESCONOCIDA';
     log.error(
       { fn: 'manejadorErrores', etapa, error: err, metodo: req.method, ruta: req.originalUrl },
@@ -52,7 +36,6 @@ function manejadorErrores(err, req, res, next) {
       mensaje: `Error interno inesperado durante la etapa ${etapa}: ${err && err.message}. ` +
         `Busque el requestId ${req.requestId} en backend/logs/app.log para ver el stack trace completo.`,
     });
-    // En desarrollo se devuelve el stack también en la respuesta, para depurar rápido.
     if (env.NODE_ENV === 'development' && err && err.stack) error.errores[0].stack = err.stack.split('\n').slice(0, 8);
   } else if (error.http >= 500) {
     log.error({ fn: 'manejadorErrores', etapa: error.etapa, codigo: error.codigo, error: error.causa }, `${error.etapa}: ${error.message}`);

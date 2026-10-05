@@ -1,21 +1,8 @@
-/**
- * Cliente HTTP del frontend.
- *
- * - Genera un requestId propio y lo envía en la cabecera X-Request-Id: el
- *   backend lo reutiliza, así el MISMO id aparece en la consola del
- *   navegador y en backend/logs/app.log.
- * - Si la respuesta trae errores, los imprime en la consola del navegador
- *   agrupados, con el requestId, la etapa y cada campo.
- * - Nunca lanza excepciones: siempre devuelve { ok, status, cuerpo, requestId }
- *   para que las pantallas muestren el error de forma legible.
- */
-
 function nuevoRequestId() {
   if (globalThis.crypto && crypto.randomUUID) return crypto.randomUUID();
   return `web-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
-/** Imprime los errores en la consola del navegador de forma legible. */
 function registrarErrores(metodo, ruta, status, cuerpo, requestId) {
   const errores = (cuerpo && cuerpo.errores) || [];
   if (!errores.length && status < 400) return;
@@ -33,11 +20,6 @@ function registrarErrores(metodo, ruta, status, cuerpo, requestId) {
   console.groupEnd(); // eslint-disable-line no-console
 }
 
-/**
- * @param {string} metodo GET | POST | PUT | PATCH | DELETE
- * @param {string} ruta   p. ej. '/api/transacciones'
- * @param {*} [cuerpo]    se envía como JSON; si es string se envía TAL CUAL (para probar JSON malformado)
- */
 export async function api(metodo, ruta, cuerpo) {
   const requestId = nuevoRequestId();
   const opciones = { method: metodo, headers: { 'X-Request-Id': requestId } };
@@ -65,7 +47,6 @@ export async function api(metodo, ruta, cuerpo) {
   try {
     datos = texto ? JSON.parse(texto) : {};
   } catch {
-    // El proxy de Vite devuelve HTML/texto si el backend está caído.
     datos = {
       ok: false, requestId: idServidor, etapa: 'RESPUESTA',
       mensaje: `El servidor respondió algo que no es JSON (HTTP ${respuesta.status}). Si es 500/502/504, revise que el backend esté corriendo.`,
@@ -76,7 +57,6 @@ export async function api(metodo, ruta, cuerpo) {
   return { ok: respuesta.ok, status: respuesta.status, cuerpo: datos, requestId: idServidor };
 }
 
-/** Arma un query string ignorando los filtros vacíos. */
 export function consulta(filtros) {
   const p = new URLSearchParams();
   Object.entries(filtros).forEach(([k, v]) => {

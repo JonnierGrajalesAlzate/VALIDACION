@@ -1,10 +1,6 @@
-/**
- * Acceso a la tabla usuarios. Solo SQL parametrizado.
- */
 const { consultar, pool } = require('../db/pool');
 const { crearFiltros } = require('./sqlUtil');
 
-/** Usuarios cuyos correos están en la lista. */
 async function buscarPorEmails(emails, cliente = pool) {
   const r = await consultar(
     'SELECT id, nombre, email, estado FROM usuarios WHERE email = ANY($1::text[])',
@@ -15,11 +11,6 @@ async function buscarPorEmails(emails, cliente = pool) {
   return r.rows;
 }
 
-/**
- * Crea (con estado ACTIVO) los usuarios que no existan.
- * unnest() convierte los dos arreglos en filas: una sola consulta para N
- * usuarios. ON CONFLICT DO NOTHING evita fallar si otro proceso lo creó.
- */
 async function crearSiNoExisten(usuarios, cliente = pool) {
   if (!usuarios.length) return [];
   const r = await consultar(
@@ -34,7 +25,6 @@ async function crearSiNoExisten(usuarios, cliente = pool) {
   return r.rows;
 }
 
-/** Lista de usuarios con su cantidad de transacciones y anomalías. */
 async function listarConConteos({ estado, email } = {}) {
   const f = crearFiltros();
   if (estado) f.agregar('u.estado = ?', estado);

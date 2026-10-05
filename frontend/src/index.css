@@ -1,9 +1,3 @@
-/* =====================================================================
-   Appresso — estilos globales.
-   Los colores son "tokens" (variables CSS): el modo oscuro solo cambia
-   los valores, no las reglas. Las gráficas usan la paleta validada para
-   daltonismo (azul / naranja) y una rampa azul secuencial.
-   ===================================================================== */
 :root {
   color-scheme: light;
   --bg: #f6f5f2;
@@ -17,10 +11,8 @@
   --brand-ink: #ffffff;
   --focus: #2a78d6;
 
-  /* Paleta categórica (orden fijo) */
-  --series-1: #2a78d6; /* POSIBLE_FRAUDE */
-  --series-2: #eb6834; /* EXCESO_FRANJA_HORARIA */
-  /* Rampa secuencial azul (100 → 700) */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
   --seq-0: #f0efec;
   --seq-1: #cde2fb;
   --seq-2: #9ec5f4;
@@ -29,12 +21,10 @@
   --seq-5: #256abf;
   --seq-6: #184f95;
   --seq-7: #0d366b;
-  /* Niveles (rampa ordinal: BAJO → ALTO) */
   --nivel-bajo: #86b6ef;
   --nivel-medio: #2a78d6;
   --nivel-alto: #104281;
 
-  /* Estados (siempre con ícono + texto, nunca solo color) */
   --good: #0ca30c;
   --serious: #ec835a;
   --critical: #d03b3b;
@@ -121,7 +111,6 @@ h2 { font-size: 1.15rem; }
 h3 { font-size: 1rem; }
 code, .mono { font-family: Consolas, 'Cascadia Mono', ui-monospace, monospace; font-size: 0.86em; }
 
-/* ── Estructura ───────────────────────────────────────────────── */
 .barra {
   display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap;
   padding: 0.75rem 1.25rem; background: var(--surface); border-bottom: 1px solid var(--border);
@@ -157,8 +146,30 @@ main { max-width: 1280px; margin: 0 auto; padding: 1.25rem 1rem 3rem; }
 .kpi .etiqueta { color: var(--text-2); font-size: 0.82rem; }
 .kpi .valor { font-size: 1.65rem; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.25; }
 .kpi .detalle { color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+a.kpi.enlace { color: inherit; text-decoration: none; display: block; }
+a.kpi.enlace:hover { border-color: var(--focus); }
+a.kpi.enlace:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 
-/* ── Formularios ──────────────────────────────────────────────── */
+.periodos { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); margin-bottom: 1rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.periodo { padding: 0.9rem 1.1rem; border-left: 1px solid var(--border); }
+.periodo:first-child { border-left: none; }
+.periodo .etiqueta { color: var(--text-2); font-size: 0.85rem; font-weight: 600; }
+.periodo .valor { font-size: 2.1rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.periodo .valor span { font-size: 0.95rem; font-weight: 500; color: var(--text-2); }
+.periodo .detalle { color: var(--text-2); font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+.periodo .secundario { margin-top: 0.35rem; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+@media (max-width: 560px) {
+  .periodo { border-left: none; border-top: 1px solid var(--border); }
+  .periodo:first-child { border-top: none; }
+}
+
+.revision { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); }
+.sub-h { font-size: 0.82rem; font-weight: 400; color: var(--text-2); }
+.nota-grafica { font-size: 0.84rem; color: var(--text-2); margin: 0.4rem 0 0; }
+.titulo-mini { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; font-weight: 600; color: var(--text-2); margin: 0.5rem 0 0; }
+.titulo-mini i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
 label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-2); margin-bottom: 0.25rem; }
 input, select, textarea {
   width: 100%; font: inherit; color: var(--text); background: var(--surface);
@@ -189,7 +200,6 @@ button.peligro { color: var(--critical); border-color: color-mix(in srgb, var(--
 button.chico { padding: 0.2rem 0.55rem; font-size: 0.82rem; }
 .botones { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0; }
 
-/* ── Tablas ───────────────────────────────────────────────────── */
 .tabla-scroll { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
 th, td { text-align: left; padding: 0.45rem 0.55rem; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -198,15 +208,16 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 tr.resaltada td { background: color-mix(in srgb, var(--series-1) 12%, transparent); }
 tr.fuera td { color: var(--muted); }
 
-/* ── Insignias (texto + ícono, el color es secundario) ────────── */
 .insignia { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.78rem; font-weight: 600; white-space: nowrap;
   padding: 0.05rem 0.5rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); }
 .insignia .marca-color { width: 8px; height: 8px; border-radius: 2px; }
 .insignia.ok::before { content: '✓'; color: var(--good); }
 .insignia.mal::before { content: '✕'; color: var(--critical); }
 .insignia.alerta::before { content: '⚠'; color: var(--serious); }
+.insignia.abierta::before { content: '◔'; color: var(--focus); }
+.insignia.descartada::before { content: '⊘'; color: var(--muted); }
+.insignia.descartada { color: var(--text-2); }
 
-/* ── Panel de resultado ───────────────────────────────────────── */
 .resultado { border-radius: var(--radius); border: 1px solid var(--border); border-left-width: 5px; padding: 0.9rem 1rem; background: var(--surface); }
 .resultado.ok { border-left-color: var(--good); background: var(--good-bg); }
 .resultado.alerta { border-left-color: var(--serious); background: var(--serious-bg); }
@@ -224,7 +235,6 @@ tr.fuera td { color: var(--muted); }
 .aviso { background: var(--surface-2); border: 1px dashed var(--border); border-radius: 8px; padding: 0.7rem 0.9rem; color: var(--text-2); font-size: 0.88rem; }
 details > summary { cursor: pointer; color: var(--text-2); font-size: 0.85rem; margin-top: 0.5rem; }
 
-/* ── Gráficas ─────────────────────────────────────────────────── */
 .leyenda { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.82rem; color: var(--text-2); margin-bottom: 0.4rem; }
 .leyenda span { display: inline-flex; align-items: center; gap: 0.35rem; }
 .leyenda i { width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
@@ -242,7 +252,6 @@ details > summary { cursor: pointer; color: var(--text-2); font-size: 0.85rem; m
 .escala { display: flex; align-items: center; gap: 0.4rem; font-size: 0.75rem; color: var(--muted); margin-top: 0.6rem; }
 .escala .tramo { width: 22px; height: 10px; border-radius: 2px; }
 
-/* Línea de tiempo de la ventana */
 .linea { position: relative; height: 110px; margin: 1rem 0.5rem 0.5rem; }
 .linea .eje-t { position: absolute; left: 0; right: 0; top: 60px; height: 2px; background: var(--border); }
 .linea .ventana { position: absolute; top: 40px; height: 42px; border-radius: 6px; background: color-mix(in srgb, var(--series-1) 16%, transparent); border: 1px dashed var(--series-1); }

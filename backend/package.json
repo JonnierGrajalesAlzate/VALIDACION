@@ -13,6 +13,7 @@
     "db:schema": "node scripts/ejecutar-sql.js ../database/schema.sql",
     "db:seed": "node scripts/ejecutar-sql.js ../database/seed.sql",
     "db:reset": "node scripts/ejecutar-sql.js ../database/reset.sql ../database/schema.sql ../database/seed.sql",
+    "db:migrar": "node scripts/ejecutar-sql.js ../database/migraciones/001_estado_revision_anomalias.sql",
     "generar:seed": "node scripts/generar-seed.js",
     "generar:datos": "node scripts/generar-datos.js",
     "generar:fixtures-python": "python scripts/hash_profesor.py"

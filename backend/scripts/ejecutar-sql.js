@@ -1,9 +1,3 @@
-/**
- * Ejecuta uno o varios archivos .sql contra la base de datos del .env
- * (alternativa a pgAdmin 4 para quien prefiera la terminal).
- *
- * Uso: node scripts/ejecutar-sql.js ../database/schema.sql [otro.sql ...]
- */
 const fs = require('fs');
 const path = require('path');
 const { Client } = require('pg');
@@ -29,7 +23,6 @@ async function main() {
     const ruta = path.resolve(process.cwd(), archivo);
     const sql = fs.readFileSync(ruta, 'utf8');
     try {
-      // Sin parámetros, `query` admite varias sentencias en un solo texto.
       await cliente.query(sql);
       console.log(`[OK] ${path.basename(ruta)} ejecutado en ${env.PGDATABASE}`);
     } catch (err) {

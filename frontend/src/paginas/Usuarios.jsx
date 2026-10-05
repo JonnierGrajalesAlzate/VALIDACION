@@ -1,4 +1,3 @@
-/** Usuarios con sus conteos; permite activar/inactivar (PATCH /api/usuarios/:id). */
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/cliente';

@@ -1,11 +1,3 @@
-/**
- * Validación de parámetros de consulta (?usuario=...&desde=...) y de :id.
- *
- * Nota: en la URL TODO llega como texto, así que aquí sí se convierte
- * "50" → 50, pero solo después de comprobar con una expresión regular que
- * es exactamente un número. Parámetros desconocidos → error (modo estricto),
- * para que un error de tipeo como ?estdo=ANOMALA no se ignore en silencio.
- */
 const { z } = require('zod');
 const { DateTime } = require('luxon');
 const env = require('../config/env');
@@ -13,17 +5,12 @@ const { ErrorApp } = require('../errores/ErrorApp');
 const { ETAPAS } = require('../logging/etapas');
 const { parsearFechaIso } = require('./fechas');
 
-/** Entero positivo escrito en texto ("12" → 12). */
 const enteroTexto = (min, max) => z
   .string()
   .regex(/^\d+$/, 'debe ser un entero positivo')
   .transform(Number)
   .refine((n) => n >= min && n <= max, `debe estar entre ${min} y ${max}`);
 
-/**
- * Fecha de filtro. Acepta ISO completa (2026-09-23T10:00:00) o solo el día
- * (2026-09-23): "desde" toma el inicio del día y "hasta" el final.
- */
 const fechaFiltro = (extremo) => z.string().transform((texto, ctx) => {
   if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) {
     const dia = DateTime.fromISO(texto, { zone: env.TZ_NEGOCIO });
@@ -46,10 +33,6 @@ const paginacion = {
   pagina: enteroTexto(1, 1000000).optional().default(1),
 };
 
-/**
- * Valida `datos` con `esquema`; si falla lanza ErrorApp 422 con un error
- * por parámetro.
- */
 function validarParametros(esquema, datos, origen = 'query') {
   const r = esquema.safeParse(datos || {});
   if (r.success) return r.data;
@@ -80,7 +63,6 @@ function validarParametros(esquema, datos, origen = 'query') {
   });
 }
 
-/** Valida el :id de la ruta (entero positivo). */
 function validarId(texto, nombre = 'id') {
   return validarParametros(z.strictObject({ [nombre]: enteroTexto(1, Number.MAX_SAFE_INTEGER) }), { [nombre]: texto }, 'ruta')[nombre];
 }

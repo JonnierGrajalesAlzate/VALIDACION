@@ -1,9 +1,3 @@
-/**
- * Lee los colores (tokens CSS) actuales para pasárselos a Recharts, que
- * necesita valores concretos. Se recalcula cuando cambia el modo
- * claro/oscuro del sistema, así las gráficas usan los pasos validados
- * para cada fondo en lugar de "invertir" colores automáticamente.
- */
 import { useEffect, useState } from 'react';
 
 const TOKENS = ['--text', '--text-2', '--muted', '--border', '--surface', '--surface-2', '--series-1', '--series-2',

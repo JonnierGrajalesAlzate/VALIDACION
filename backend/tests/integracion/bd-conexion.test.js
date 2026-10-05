@@ -1,8 +1,3 @@
-/**
- * Fase 1 — Base de datos y conexión.
- * Verifica el esquema, las restricciones, el trigger de fecha_actualizacion,
- * la traducción de errores de PostgreSQL y el endpoint /api/health.
- */
 const request = require('supertest');
 const { Client } = require('pg');
 const env = require('../../src/config/env');

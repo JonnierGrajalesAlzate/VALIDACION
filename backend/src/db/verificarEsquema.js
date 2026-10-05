@@ -1,26 +1,17 @@
-/**
- * Verificación de la base de datos al arrancar (y en /api/health).
- *
- * Revisa, en este orden:
- *  1. que haya conexión (host, puerto, credenciales, base de datos),
- *  2. que existan las 3 tablas,
- *  3. que cada tabla tenga todas las columnas del modelo.
- * y devuelve una lista precisa de lo que falta, en vez de fallar luego con
- * un "relation does not exist" en medio de una petición.
- */
 const { pool } = require('./pool');
 const { traducirErrorPg } = require('../errores/traductorPg');
 
-// Modelo de datos acordado (no se agrega ni se quita nada sin aprobación).
 const MODELO = {
   usuarios: ['id', 'nombre', 'email', 'estado', 'fecha_creacion', 'fecha_actualizacion'],
   transacciones: ['id', 'usuario_id', 'valor', 'fecha_txn', 'estado', 'hash', 'metodo_pago', 'fecha_creacion', 'fecha_actualizacion'],
-  anomalias: ['id', 'transaccion_id', 'tipo', 'nivel', 'cantidad_transacciones', 'ventana_segundos', 'fecha_creacion', 'fecha_actualizacion'],
+  anomalias: ['id', 'transaccion_id', 'tipo', 'nivel', 'cantidad_transacciones', 'ventana_segundos',
+    'estado_revision', 'nota_revision', 'fecha_revision', 'fecha_creacion', 'fecha_actualizacion'],
 };
 
-/**
- * @returns {Promise<{ok: boolean, latenciaMs?: number, version?: string, problemas: string[], codigo?: string, original?: object}>}
- */
+const MIGRACIONES = {
+  estado_revision: 'database/migraciones/001_estado_revision_anomalias.sql (o "npm run db:migrar" en backend)',
+};
+
 async function verificarEsquema() {
   const inicio = Date.now();
   let version;
@@ -61,7 +52,8 @@ async function verificarEsquema() {
     }
     const faltantes = columnas.filter((c) => !existentes.has(c));
     if (faltantes.length) {
-      problemas.push(`A la tabla "${tabla}" le faltan las columnas: ${faltantes.join(', ')}.`);
+      const migracion = faltantes.map((c) => MIGRACIONES[c]).find(Boolean);
+      problemas.push(`A la tabla "${tabla}" le faltan las columnas: ${faltantes.join(', ')}.${migracion ? ` La base se creó con un esquema anterior: ejecute ${migracion}.` : ''}`);
     }
   }
 

@@ -1,26 +1,5 @@
-/**
- * Parser de JSON que CONSERVA el texto original de cada número.
- *
- * ¿Por qué hace falta? JSON.parse convierte `50000.0` y `50000` en el mismo
- * Number de JavaScript (50000), pero Python los distingue: 50000.0 es float
- * y json.dumps lo vuelve a escribir como "50000.0". Si el profesor firmó
- * un JSON con 50000.0 y nosotros re-serializamos 50000, el HMAC no
- * coincidiría nunca. Además, en modo estricto queremos rechazar
- * `"idTxn": 10001.0` (no es un entero literal), algo imposible de ver
- * después de JSON.parse.
- *
- * Node 21+ pasa un tercer argumento `context` al reviver de JSON.parse con
- * `context.source` = texto exacto del literal numérico. Guardamos ese texto
- * en un WeakMap indexado por el objeto contenedor, sin modificar los datos.
- */
-
-// objeto/arreglo contenedor → { clave: textoOriginalDelNumero }
 const fuentesNumericas = new WeakMap();
 
-/**
- * Parsea `texto` como JSON. Si es inválido lanza un Error con
- * `posicion`, `linea`, `columna` y `fragmento` para un mensaje claro.
- */
 function parsearJsonConservandoNumeros(texto) {
   try {
     return JSON.parse(texto, function reviver(clave, valor, contexto) {
@@ -39,19 +18,16 @@ function parsearJsonConservandoNumeros(texto) {
   }
 }
 
-/** Devuelve el texto original del número en contenedor[clave], o null. */
 function fuenteNumero(contenedor, clave) {
   if (!contenedor || typeof contenedor !== 'object') return null;
   const mapa = fuentesNumericas.get(contenedor);
   return mapa && Object.prototype.hasOwnProperty.call(mapa, clave) ? mapa[clave] : null;
 }
 
-/** true si el literal numérico tiene punto decimal o exponente (Python lo lee como float). */
 function esLiteralDecimal(fuente) {
   return typeof fuente === 'string' && /[.eE]/.test(fuente);
 }
 
-// Traducción de los mensajes más comunes de V8 al español.
 const TRADUCCIONES = [
   [/Unexpected end of JSON input/i, 'el JSON termina antes de tiempo (¿falta cerrar una llave } o un corchete ]?)'],
   [/Expected property name or '}'/i, "se esperaba el nombre de un campo entre comillas dobles o '}' (¿hay una coma sobrante antes de '}'?)"],
@@ -79,7 +55,6 @@ function describirErrorJson(err, texto) {
     const antes = texto.slice(0, posicion);
     linea = antes.split('\n').length;
     columna = posicion - antes.lastIndexOf('\n');
-    // Fragmento alrededor del error con una marca ⟦aquí⟧ en la posición exacta.
     fragmento = `${texto.slice(Math.max(0, posicion - 25), posicion)}⟦aquí⟧${texto.slice(posicion, posicion + 25)}`.replace(/\s+/g, ' ');
   }
 

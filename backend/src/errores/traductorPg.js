@@ -1,35 +1,14 @@
-/**
- * Traduce los errores de PostgreSQL / node-postgres a mensajes claros en
- * español, según su código (SQLSTATE) o el código de red de Node.
- *
- * Siempre se conserva el código y el mensaje ORIGINAL de PostgreSQL en
- * `original`, para loguearlo: el mensaje traducido orienta, pero el
- * original es la evidencia exacta.
- *
- * Referencia de códigos: https://www.postgresql.org/docs/current/errcodes-appendix.html
- */
 const env = require('../config/env');
 
-/** Descripción de la conexión SIN la contraseña (nunca se muestra). */
 function descripcionConexion() {
   return `host=${env.PGHOST} puerto=${env.PGPORT} base_de_datos=${env.PGDATABASE} usuario=${env.PGUSER}`;
 }
 
-/**
- * Extrae el valor duplicado del "detail" de PG.
- * Ej.: 'Key (id)=(10003) already exists.'  → { columnas: 'id', valor: '10003' }
- *      'La llave (id)=(10003) ya existe.'   (PG instalado en español)
- * Por eso el patrón NO depende del idioma: solo busca "(columnas)=(valor)".
- */
 function extraerLlave(detail) {
   const m = /\(([^()]+)\)=\((.*?)\)/.exec(detail || '');
   return m ? { columnas: m[1], valor: m[2] } : null;
 }
 
-/**
- * @param {Error & {code?: string}} err Error lanzado por `pg` o por la red
- * @returns {{codigo: string, mensaje: string, original: object}}
- */
 function traducirErrorPg(err) {
   const original = {
     codigoPg: err.code || null,
@@ -43,7 +22,6 @@ function traducirErrorPg(err) {
 
   switch (err.code) {
     case '23505': {
-      // unique_violation
       if (err.constraint === 'transacciones_pkey' && llave) {
         return {
           codigo: 'DUPLICADO',
@@ -59,7 +37,7 @@ function traducirErrorPg(err) {
         original,
       };
     }
-    case '23503': // foreign_key_violation
+    case '23503':
       return {
         codigo: 'LLAVE_FORANEA',
         mensaje:
@@ -69,57 +47,57 @@ function traducirErrorPg(err) {
             : 'el registro referenciado no existe o tiene registros dependientes'),
         original,
       };
-    case '23514': // check_violation
+    case '23514':
       return {
         codigo: 'VALOR_NO_PERMITIDO',
         mensaje: `Se violó la regla CHECK "${err.constraint || '?'}" de la tabla ${err.table || '?'}: el valor no está permitido por la base de datos`,
         original,
       };
-    case '23502': // not_null_violation
+    case '23502':
       return {
         codigo: 'CAMPO_FALTANTE',
         mensaje: `La columna ${err.column || '?'} de la tabla ${err.table || '?'} no admite NULL`,
         original,
       };
-    case '22P02': // invalid_text_representation
+    case '22P02':
       return {
         codigo: 'TIPO_INVALIDO',
         mensaje: `PostgreSQL recibió un dato con tipo inválido: ${err.message}`,
         original,
       };
-    case '22003': // numeric_value_out_of_range
+    case '22003':
       return {
         codigo: 'VALOR_FUERA_DE_RANGO',
         mensaje: `Un valor numérico excede el rango de su columna: ${err.message}`,
         original,
       };
-    case '28P01': // invalid_password
-    case '28000': // invalid_authorization_specification
+    case '28P01':
+    case '28000':
       return {
         codigo: 'BD_CREDENCIALES',
         mensaje: `PostgreSQL rechazó las credenciales (${descripcionConexion()}). Revise PGUSER y PGPASSWORD en backend/.env`,
         original,
       };
-    case '3D000': // invalid_catalog_name
+    case '3D000':
       return {
         codigo: 'BD_NO_EXISTE',
         mensaje: `La base de datos "${env.PGDATABASE}" no existe en ${env.PGHOST}:${env.PGPORT}. Créela en pgAdmin 4 (clic derecho en Databases → Create → Database) o corrija PGDATABASE en backend/.env`,
         original,
       };
-    case '42P01': // undefined_table
+    case '42P01':
       return {
         codigo: 'BD_TABLA_NO_EXISTE',
         mensaje: `Una tabla no existe (${err.message}). Ejecute database/schema.sql en la base "${env.PGDATABASE}" desde el Query Tool de pgAdmin 4`,
         original,
       };
-    case '42703': // undefined_column
+    case '42703':
       return {
         codigo: 'BD_COLUMNA_NO_EXISTE',
         mensaje: `Una columna no existe (${err.message}). El esquema de la base no coincide con database/schema.sql`,
         original,
       };
-    case '57P01': // admin_shutdown
-    case '57P03': // cannot_connect_now
+    case '57P01':
+    case '57P03':
       return {
         codigo: 'BD_SIN_CONEXION',
         mensaje: `PostgreSQL se está apagando o reiniciando (${descripcionConexion()})`,
@@ -147,7 +125,6 @@ function traducirErrorPg(err) {
       break;
   }
 
-  // Sin código: errores de conexión que `pg` lanza como texto.
   if (/timeout exceeded when trying to connect|Connection terminated/i.test(err.message || '')) {
     return {
       codigo: 'BD_SIN_CONEXION',
@@ -163,10 +140,8 @@ function traducirErrorPg(err) {
   };
 }
 
-/** Indica si el error proviene de PostgreSQL o de la conexión a él. */
 function esErrorPg(err) {
   if (!err) return false;
-  // Los errores de PG traen un SQLSTATE de 5 caracteres; los de red, códigos E*.
   return (
     (typeof err.code === 'string' && /^[0-9A-Z]{5}$/.test(err.code) && 'severity' in err) ||
     ['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT'].includes(err.code) ||

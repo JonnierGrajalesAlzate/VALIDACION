@@ -11,9 +11,9 @@
 
 ```
 TAREA/
-├── database/            schema.sql · seed.sql · reset.sql · limpiar-datos.sql · propuestas/ (migraciones NO ejecutadas)
+├── database/            schema.sql · seed.sql · reset.sql · limpiar-datos.sql · migraciones/ · propuestas/ (NO ejecutadas)
 ├── backend/
-│   ├── config/reglas.json   ventana, umbral, franjas, niveles, métodos de pago, modo del hash
+│   ├── config/reglas.json   umbral, ventana por franja horaria, niveles, métodos de pago, modo del hash
 │   ├── src/                 app.js · server.js · hashing.js · validacion/ · ventana/ · repositorios/ · rutas/ · ...
 │   ├── scripts/             generar-datos.js · generar-seed.js · hash_profesor.py · ejecutar-sql.js
 │   ├── tests/               unit/ · integracion/ · fixtures/
@@ -38,7 +38,9 @@ TAREA/
 2. Clic derecho en **Databases → Create → Database…**, nombre **`ACTIVIDAD_PA`**, y guardar. Omita este paso si la base ya existe.
 3. Clic derecho sobre `ACTIVIDAD_PA` → **Query Tool**.
 4. Abra `database/schema.sql` (ícono de carpeta) y ejecútelo con **F5**. Crea las 3 tablas, los CHECK, los índices y los triggers.
-5. *(Opcional)* Abra y ejecute `database/seed.sql`: carga 15 usuarios, unas 415 transacciones y 38 anomalías, incluidos los 3 casos de uso del 01/09/2026.
+5. *(Opcional)* Abra y ejecute `database/seed.sql`: carga 15 usuarios, unas 415 transacciones y 30 anomalías (con estados de revisión de ejemplo), incluidos los 3 casos de uso del 01/09/2026.
+
+> **¿Su base ya existía?** Si `ACTIVIDAD_PA` se creó con un `schema.sql` anterior (sin los estados de revisión), ejecute una sola vez `database/migraciones/001_estado_revision_anomalias.sql` (o `npm run db:migrar` en `backend`). Agrega `estado_revision`, `nota_revision` y `fecha_revision` a `anomalias` sin borrar datos. Si falta, el backend lo indica al arrancar y en `/api/health`.
 
 Otros scripts:
 
@@ -101,9 +103,9 @@ Abra **http://localhost:5173**. Vite reenvía `/api` al backend.
 | Página | Qué hace |
 |---|---|
 | **Registrar** | Formulario con validación en vivo y los botones *Calcular hash*, *Enviar*, *Corromper hash*, *Enviar con tipo incorrecto*. Incluye un área para lotes en JSON y los 3 casos de uso precargados |
-| **Dashboard** | Tarjetas (hoy / semana / mes, % anómalas, valor sospechoso…), evolución, mapa de calor por hora, distribución por nivel, tipo y método de pago, usuarios recurrentes y casos frecuentes |
-| **Anomalías → detalle** | Línea de tiempo y recorrido de la ventana paso a paso: qué transacción entró y cuál salió |
-| **Transacciones / Usuarios / Configuración** | Filtros, eliminar, activar/inactivar usuarios, cambiar ventana y umbral |
+| **Dashboard** | Hoy / esta semana / este mes (anomalías y transacciones, con su tendencia contra el periodo anterior), % anómalas, usuarios afectados, valor sospechoso, promedio por usuario, estados de revisión (nuevas / abiertas / revisadas / descartadas), evolución diaria con tendencia y picos repentinos, mapa de calor día × hora, anomalías y transacciones por hora, actividad por franja horaria, múltiples transacciones (tamaño de las ráfagas), niveles, métodos de pago, usuarios recurrentes y casos más recurrentes |
+| **Anomalías → detalle** | Filtro por estado de revisión. En el detalle: revisión (abrir, marcar revisada, descartar, nota), línea de tiempo y recorrido de la ventana paso a paso: qué transacción entró y cuál salió |
+| **Transacciones / Usuarios / Configuración** | Filtros, eliminar, activar/inactivar usuarios, ver la ventana de cada franja y cambiar las reglas |
 
 Los errores se muestran campo por campo y también se imprimen en la **consola del navegador (F12)** con su `requestId`.
 
@@ -123,9 +125,10 @@ Las pruebas crean y limpian **`actividad_pa_test`**; nunca tocan `ACTIVIDAD_PA`.
 | Casos de uso | Los 3 casos obligatorios, también enviados de a una transacción |
 | Validación | Tipo incorrecto, campo faltante, campo extra, correo inválido, fecha imposible, valor negativo, hash inválido, `idTxn` duplicado, usuario inactivo, JSON malformado |
 | Lotes | Lote mixto (207) y **ROLLBACK** cuando falla la persistencia |
-| Ventana | Límites exactos (3,000 s vs 3,001 s), transacciones desordenadas, anomalías entre dos lotes, llegada tardía |
-| Franjas | Franja que cruza la medianoche y modo móvil |
+| Ventana | Límites exactos de cada franja (10 / 6 / 3 s y 1 ms más), transacciones desordenadas, anomalías entre dos lotes, llegada tardía |
+| Franjas | Ventana según la hora, cambio de franja (la ventana crece o se reduce), franja que cruza la medianoche |
 | Hash | **Compatibilidad con Python**: fixtures de `scripts/hash_profesor.py` (7 casos + 410 floats). Si Python está instalado, también se ejecuta en vivo |
+| Dashboard | Estados de revisión (PATCH y filtros), hoy vs. ayer a la misma hora, días sin anomalías en 0, media móvil y picos, por hora, por franja, múltiples transacciones, base vacía |
 | Errores de PostgreSQL | Traducción de 23505, 23503, 23514, 22P02, 42P01, ECONNREFUSED y 28P01 |
 
 ### Generar datos de prueba con hash válido
@@ -153,10 +156,11 @@ Todas las opciones están en la cabecera de `scripts/generar-datos.js`.
 | DELETE | `/api/transacciones/:id` | Elimina la transacción y sus anomalías |
 | GET | `/api/usuarios` | Usuarios con su cantidad de transacciones y anomalías |
 | PATCH | `/api/usuarios/:id` | `{ "estado": "ACTIVO" \| "INACTIVO" }` |
-| GET | `/api/anomalias` | Filtros `tipo`, `nivel`, `desde`, `hasta`, `usuario` |
+| GET | `/api/anomalias` | Filtros `tipo`, `nivel`, `estadoRevision`, `desde`, `hasta`, `usuario` |
 | GET | `/api/anomalias/:id` | Detalle con línea de tiempo y pasos de la ventana |
+| PATCH | `/api/anomalias/:id` | Revisión: `{ "estadoRevision": "ABIERTA" \| "REVISADA" \| "DESCARTADA", "nota"?: "…" }` |
 | GET | `/api/estadisticas` | Datos del dashboard (todo calculado con SQL) |
-| GET / PUT | `/api/config` | Reglas: ventana, umbral, franjas, niveles, métodos de pago, modo del hash |
+| GET / PUT | `/api/config` | Reglas: umbral, ventana por franja, niveles, métodos de pago, modo del hash |
 | GET | `/api/health` | Estado del servidor y de PostgreSQL |
 | POST | `/api/dev/calcular-hash` | **Solo `NODE_ENV=development`**: hash correcto y cadena firmada |
 
@@ -203,11 +207,20 @@ Para encontrar todos los logs de una petición, busque su `requestId` en `app.lo
 
 ## 8. Cómo funciona la ventana deslizante
 
+El tamaño de la ventana depende de la **hora en que ocurre la transacción** (configurable en `reglas.json → franjasHorarias`):
+
+| Franja | Horario | Ventana |
+|---|---|---|
+| `MANANA` | 05:00:01 a. m. → 12:00:00 m. | **10 s** |
+| `TARDE_NOCHE` | 12:00:01 m. → 08:00:00 p. m. | **6 s** |
+| `NOCHE_MADRUGADA` | 08:00:01 p. m. → 05:00:00 a. m. del día siguiente | **3 s** |
+
 Cada usuario tiene su propia cola (`Map usuario → cola`). Las transacciones se ordenan por fecha y, para cada una:
 
-1. Se **agrega** al final de la cola de su usuario.
-2. Se **sacan por el inicio** las que cumplen `fecha_actual − fecha_txn > 3 s`.
-3. Se **cuenta** lo que queda: si hay **≥ 3**, la transacción se marca `ANOMALA` y se registra `POSIBLE_FRAUDE`.
+1. Se busca su franja y con ella el tamaño de la ventana `W` (10, 6 o 3 s).
+2. Se **agrega** al final de la cola de su usuario.
+3. Se **sacan por el inicio** las que cumplen `fecha_actual − fecha_txn > W`.
+4. Se **cuenta** lo que queda: si hay **≥ 3**, la transacción se marca `ANOMALA` y se registra `POSIBLE_FRAUDE` con `ventana_segundos = W`.
 
 Cada transacción entra y sale una sola vez de la cola, así que el recorrido es **O(n)** por usuario; una comparación de todas contra todas sería O(n²). Antes de procesar un lote se cargan de PostgreSQL las transacciones recientes de cada usuario, para no perder anomalías que cruzan entre dos envíos.
 

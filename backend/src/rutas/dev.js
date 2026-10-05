@@ -1,15 +1,3 @@
-/**
- * POST /api/dev/calcular-hash — SOLO existe con NODE_ENV=development.
- *
- * Devuelve el hash correcto de una transacción (con la misma lógica que se
- * usa al validar) y la cadena exacta que se firmó, para armar pruebas.
- * Acepta el objeto con o sin el campo "hash" y NO valida los tipos: así se
- * puede firmar, por ejemplo, un value "50000" (string) y comprobar que la
- * API lo rechaza por TIPO y no por HASH.
- *
- * En producción esta ruta no se registra: sería un "firmador" de
- * transacciones falsas para cualquiera.
- */
 const { Router } = require('express');
 const { calcularHash } = require('../hashing');
 const { ErrorApp } = require('../errores/ErrorApp');

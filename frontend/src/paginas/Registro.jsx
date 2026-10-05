@@ -1,10 +1,3 @@
-/**
- * Formulario de registro de transacciones.
- *
- * La validación del cliente es solo una AYUDA en vivo: la validación real y
- * definitiva la hace el backend. Por eso el botón "Enviar" no se bloquea
- * aunque haya errores: así se puede comprobar qué responde el servidor.
- */
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/cliente';
 import PanelResultado from '../componentes/PanelResultado';
@@ -20,7 +13,6 @@ function formularioInicial() {
   return { idTxn: String(idNuevo()), user: 'aa@aa.com', date: ahoraIsoLocal(), value: '50000', paymentMethod: 'Tarjeta', hash: '' };
 }
 
-/** Validación en vivo (espejo simplificado de las reglas del backend). */
 function validarCliente(f, metodos) {
   const e = {};
   if (!/^\d+$/.test(f.idTxn) || Number(f.idTxn) <= 0) e.idTxn = 'Debe ser un entero positivo.';
@@ -43,12 +35,10 @@ function validarCliente(f, metodos) {
   return e;
 }
 
-/** Convierte el formulario en la transacción con los TIPOS correctos. */
 function aTransaccion(f) {
   return { idTxn: Number(f.idTxn), user: f.user, date: f.date, value: Number(f.value), paymentMethod: f.paymentMethod, hash: f.hash };
 }
 
-/** Los 3 casos de uso del enunciado (sin hash; se firman al cargarlos). */
 function casoDeUso(n) {
   const base = idNuevo() * 10;
   const hoy = ahoraIsoLocal().slice(0, 10);
@@ -120,7 +110,6 @@ export default function Registro() {
   }
 
   async function onCorromperHash() {
-    // Cambia el último carácter del hash: el servidor debe responder HASH_INVALIDO.
     let hash = f.hash;
     if (!/^[0-9a-fA-F]{64}$/.test(hash)) {
       const { hash: _h, ...sinHash } = aTransaccion(f); // eslint-disable-line no-unused-vars
@@ -134,7 +123,6 @@ export default function Registro() {
   }
 
   async function onTipoIncorrecto() {
-    // value e idTxn como STRING, firmados así: el error debe ser de TIPO, no de hash.
     const datos = { idTxn: String(f.idTxn), user: f.user, date: f.date, value: String(f.value), paymentMethod: f.paymentMethod };
     const r = await calcularHash(datos);
     if (!r) return;
@@ -151,7 +139,6 @@ export default function Registro() {
   }
 
   async function onEnviarLote() {
-    // Se envía el texto TAL CUAL (si está malformado, el backend responde 400 con línea y columna).
     await enviar(lote);
   }
 

@@ -1,26 +1,3 @@
-/**
- * Genera transacciones de prueba con HASH VÁLIDO (firmadas con HMAC_SECRET
- * del .env) y opcionalmente algunas malformadas a propósito.
- *
- * Uso:
- *   node scripts/generar-datos.js [opciones]
- *
- * Opciones:
- *   --cantidad-dias N    días a generar (por defecto 7)
- *   --desde AAAA-MM-DD   primer día (por defecto: hace N días)
- *   --por-dia N          transacciones normales por día, aprox. (por defecto 15)
- *   --rafagas N          ráfagas sospechosas (por defecto 4)
- *   --usuarios N         cantidad de usuarios usuarioK@appresso.test (por defecto 8)
- *   --id-inicial N       primer idTxn (por defecto: según la hora, para no repetir)
- *   --invalidas N        agrega N transacciones malformadas (tipo, hash, fecha...)
- *   --casos              agrega los 3 casos de uso del enunciado
- *   --salida archivo     guarda el JSON en ese archivo (por defecto lo imprime)
- *   --enviar URL         lo envía como lote a URL (ej. http://localhost:3000/api/transacciones)
- *
- * Ejemplos:
- *   npm run generar:datos -- --casos --salida datos.json
- *   npm run generar:datos -- --invalidas 5 --enviar http://localhost:3000/api/transacciones
- */
 const fs = require('fs');
 const { DateTime } = require('luxon');
 const env = require('../src/config/env');
@@ -45,26 +22,25 @@ function casosDeUso(idInicial, dia) {
   let id = idInicial;
   const t = (user, hora) => ({ idTxn: id++, user, date: `${dia}T${hora}`, value: 9500, paymentMethod: 'Tarjeta' });
   return [
-    t('b@b.com', '10:00:01'), t('b@b.com', '10:00:02'), t('b@b.com', '10:00:03'), // caso 1 → anomalía
-    t('c@c.com', '10:00:01'), t('c@c.com', '10:00:10'), t('c@c.com', '10:01:20'), // caso 2 → normal
-    t('d@d.com', '10:00:01'), t('e@e.com', '10:00:02'), t('f@f.com', '10:00:03'), // caso 3 → normal
+    t('b@b.com', '10:00:01'), t('b@b.com', '10:00:02'), t('b@b.com', '10:00:03'),
+    t('c@c.com', '10:00:01'), t('c@c.com', '10:00:10'), t('c@c.com', '10:01:20'),
+    t('d@d.com', '10:00:01'), t('e@e.com', '10:00:02'), t('f@f.com', '10:00:03'),
   ];
 }
 
-/** Malformadas a propósito: una de cada tipo de error. */
 function invalidas(n, idInicial, rnd) {
   let id = idInicial;
   const base = () => firmar({ idTxn: id++, user: 'error@appresso.test', date: '2026-09-23T10:30:01.120', value: 50000, paymentMethod: 'Tarjeta' });
   const generadores = [
-    () => ({ ...base(), value: '50000' }), // tipo incorrecto
-    () => ({ ...base(), idTxn: String(id) }), // idTxn como string
-    () => { const t = base(); delete t.paymentMethod; return t; }, // campo faltante
-    () => ({ ...base(), descuento: 10 }), // campo extra
-    () => ({ ...base(), user: 'correo-invalido' }), // correo
-    () => ({ ...base(), date: '2026-02-30T10:00:00' }), // fecha imposible
-    () => ({ ...base(), value: -100 }), // negativo
-    () => ({ ...base(), hash: 'f'.repeat(64) }), // hash inválido
-    () => ({ ...base(), paymentMethod: 'Bitcoin' }), // método no permitido
+    () => ({ ...base(), value: '50000' }),
+    () => ({ ...base(), idTxn: String(id) }),
+    () => { const t = base(); delete t.paymentMethod; return t; },
+    () => ({ ...base(), descuento: 10 }),
+    () => ({ ...base(), user: 'correo-invalido' }),
+    () => ({ ...base(), date: '2026-02-30T10:00:00' }),
+    () => ({ ...base(), value: -100 }),
+    () => ({ ...base(), hash: 'f'.repeat(64) }),
+    () => ({ ...base(), paymentMethod: 'Bitcoin' }),
   ];
   return Array.from({ length: n }, (_, i) => generadores[i % generadores.length](rnd));
 }
@@ -74,7 +50,6 @@ async function main() {
   const dias = Number(o['cantidad-dias'] || 7);
   const desde = o.desde || DateTime.now().setZone(env.TZ_NEGOCIO).minus({ days: dias - 1 }).toISODate();
   const nUsuarios = Number(o.usuarios || 8);
-  // Por defecto el id sale de la hora actual: dos corridas no chocan.
   const idInicial = Number(o['id-inicial'] || (Math.floor(Date.now() / 1000) % 100000000) * 10);
   const rnd = crearAleatorio(idInicial);
 

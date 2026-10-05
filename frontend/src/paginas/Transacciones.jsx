@@ -1,4 +1,3 @@
-/** Lista de transacciones con filtros; permite eliminar (para limpiar pruebas). */
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, consulta } from '../api/cliente';

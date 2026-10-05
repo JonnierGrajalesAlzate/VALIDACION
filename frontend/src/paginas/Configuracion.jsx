@@ -1,4 +1,3 @@
-/** Ver y cambiar las reglas (GET/PUT /api/config): ventana, umbral, franjas, niveles. */
 import { useEffect, useState } from 'react';
 import { api } from '../api/cliente';
 import PanelResultado from '../componentes/PanelResultado';
@@ -18,8 +17,8 @@ export default function Configuracion() {
   if (!reglas) return resultado ? <PanelResultado resultado={resultado} /> : <p className="vacio">Cargando…</p>;
 
   const v = reglas.ventanaDeslizante;
+  const fh = reglas.franjasHorarias;
   const actualizarVentana = (k) => (e) => {
-    // Se envía como número; si no es entero el backend lo rechaza con el detalle.
     const nuevas = { ...reglas, ventanaDeslizante: { ...v, [k]: e.target.value === '' ? '' : Number(e.target.value) } };
     setReglas(nuevas);
     setTexto(JSON.stringify(nuevas, null, 2));
@@ -43,14 +42,14 @@ export default function Configuracion() {
         <section className="tarjeta">
           <h2>Ventana deslizante</h2>
           <div className="fila">
-            <div className="campo"><label htmlFor="c-seg">Tamaño de la ventana (segundos)</label><input id="c-seg" type="number" min="1" value={v.segundos} onChange={actualizarVentana('segundos')} /></div>
+            <div className="campo"><label htmlFor="c-seg">Ventana fija sin franjas (segundos)</label><input id="c-seg" type="number" min="1" value={v.segundos} onChange={actualizarVentana('segundos')} disabled={fh.activo} title={fh.activo ? 'Con las franjas activas, la ventana depende de la hora de la transacción' : undefined} /></div>
             <div className="campo"><label htmlFor="c-umb">Umbral (transacciones)</label><input id="c-umb" type="number" min="2" value={v.umbral} onChange={actualizarVentana('umbral')} /></div>
           </div>
-          <p className="aviso">Regla: {v.umbral} o más transacciones del mismo usuario con (fecha_actual − fecha_txn) ≤ {v.segundos} s → POSIBLE_FRAUDE.</p>
-          <h2 style={{ marginTop: '1rem' }}>Franjas horarias ({reglas.franjasHorarias.activo ? `activas, modo ${reglas.franjasHorarias.modo}` : 'desactivadas'})</h2>
+          <p className="aviso">Regla: {v.umbral} o más transacciones del mismo usuario con (fecha_actual − fecha_txn) ≤ {fh.activo ? 'la ventana de la franja de la transacción' : `${v.segundos} s`} → POSIBLE_FRAUDE.</p>
+          <h2 style={{ marginTop: '1rem' }}>Ventana por franja horaria ({fh.activo ? 'activa' : 'desactivada: se usa la ventana fija'})</h2>
           <table>
-            <thead><tr><th>Franja</th><th>Desde</th><th>Hasta</th><th className="num">Límite</th></tr></thead>
-            <tbody>{reglas.franjasHorarias.franjas.map((f) => <tr key={f.nombre}><td>{f.nombre}</td><td className="mono">{f.desde}</td><td className="mono">{f.hasta}</td><td className="num">{f.limite}</td></tr>)}</tbody>
+            <thead><tr><th>Franja</th><th>Desde</th><th>Hasta</th><th className="num">Ventana</th></tr></thead>
+            <tbody>{fh.franjas.map((f) => <tr key={f.nombre}><td>{f.nombre}</td><td className="mono">{f.desde}</td><td className="mono">{f.hasta}</td><td className="num">{f.segundosVentana} s</td></tr>)}</tbody>
           </table>
           <p className="sub" style={{ marginTop: '0.5rem' }}>Niveles: MEDIO desde excedente {reglas.niveles.medioDesdeExcedente}, ALTO desde {reglas.niveles.altoDesdeExcedente}. Modo de hash: {reglas.hash.modo}.</p>
         </section>

@@ -1,13 +1,3 @@
-/**
- * Lectura y parseo del cuerpo JSON (etapa PARSEO_JSON).
- *
- * No se usa express.json() porque:
- *  1. su mensaje de error es genérico ("Unexpected token...") y en inglés;
- *  2. pierde el texto original de los números (ver validacion/jsonCrudo.js),
- *     que se necesita para reproducir el hash de Python byte por byte.
- *
- * Solo se parsea en POST/PUT/PATCH. El texto crudo se guarda en req.cuerpoCrudo.
- */
 const { AsyncResource } = require('async_hooks');
 const express = require('express');
 const { ErrorApp } = require('../errores/ErrorApp');
@@ -20,15 +10,11 @@ const log = crearLogger(__filename);
 const LIMITE = '5mb';
 const METODOS_CON_CUERPO = new Set(['POST', 'PUT', 'PATCH']);
 
-// Lee el cuerpo como Buffer sin interpretarlo, sea cual sea el Content-Type.
 const leerCrudo = express.raw({ type: () => true, limit: LIMITE });
 
 function parseoJson(req, res, next) {
   if (!METODOS_CON_CUERPO.has(req.method)) return next();
 
-  // AsyncResource.bind: la lectura del cuerpo termina en un evento del socket,
-  // que corre FUERA del contexto de la petición; sin bind se perdería el
-  // requestId en todos los logs posteriores.
   leerCrudo(req, res, AsyncResource.bind((err) => {
     establecerEtapa(ETAPAS.PARSEO_JSON);
     if (err) {
@@ -68,7 +54,7 @@ function parseoJson(req, res, next) {
     }
 
     try {
-      req.body = parsearJsonConservandoNumeros(texto.replace(/^﻿/, '')); // quita BOM si viene de un archivo de Windows
+      req.body = parsearJsonConservandoNumeros(texto.replace(/^﻿/, ''));
       log.debug({ fn: 'parseoJson', bytes: Buffer.byteLength(texto) }, 'JSON parseado correctamente');
       return next();
     } catch (e) {

@@ -1,19 +1,9 @@
-/**
- * Gráficas del dashboard (Recharts + un mapa de calor en grilla CSS).
- *
- * Reglas de diseño aplicadas:
- *  - Color por función: categórico (tipo de anomalía: azul / naranja, orden
- *    fijo), secuencial de un solo tono (mapa de calor), ordinal (niveles).
- *  - Leyenda siempre visible con 2+ series; los textos usan colores de texto,
- *    no el color de la serie.
- *  - Líneas de 2 px, barras delgadas con extremos redondeados, cuadrícula tenue.
- *  - Tooltip al pasar el mouse y, debajo, "Ver datos en tabla" (accesibilidad).
- */
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
-  Bar, BarChart, CartesianGrid, Cell, LabelList, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, BarChart, CartesianGrid, Cell, LabelList, Line, LineChart, ReferenceArea, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
-import { DIAS, NOMBRE_TIPO, fmtNum, fmtPesos } from '../util/formato';
+import { DIAS, fmtFecha, fmtNum, fmtPesos, horaASegundos, nombreFranja } from '../util/formato';
 
 function Tabla({ columnas, filas }) {
   return (
@@ -48,49 +38,152 @@ function TooltipSimple({ active, payload, label, titulo, formatear = fmtNum }) {
   );
 }
 
-/** Rellena con ceros los días sin anomalías para que la línea no "salte". */
-function completarDias(datos) {
-  if (!datos.length) return [];
-  const porDia = new Map(datos.map((d) => [d.dia, d]));
-  const salida = [];
-  const fin = new Date(`${datos[datos.length - 1].dia}T00:00:00Z`);
-  for (let d = new Date(`${datos[0].dia}T00:00:00Z`); d <= fin; d.setUTCDate(d.getUTCDate() + 1)) {
-    const clave = d.toISOString().slice(0, 10);
-    salida.push(porDia.get(clave) || { dia: clave, posibleFraude: 0, excesoFranja: 0, total: 0 });
-  }
-  return salida;
-}
-
 const diaCorto = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
 export function GraficaEvolucion({ datos, tema }) {
-  const serie = completarDias(datos);
-  if (!serie.length) return <p className="vacio">Aún no hay anomalías registradas.</p>;
+  if (!datos.length) return <p className="vacio">Aún no hay anomalías registradas.</p>;
   const eje = { stroke: tema.border, tick: { fill: tema['text-2'], fontSize: 12 }, tickLine: false };
+  const picos = datos.filter((d) => d.pico);
+  const PuntoPico = ({ cx, cy, payload, index }) => (payload.pico
+    ? <circle key={index} cx={cx} cy={cy} r={5} fill={tema['series-1']} stroke={tema.surface} strokeWidth={2} />
+    : <g key={index} />);
+
+  const ultimo = datos[datos.length - 1];
+  const hace7 = datos.length > 7 ? datos[datos.length - 8] : null;
+  let tendencia = null;
+  if (hace7) {
+    const dif = ultimo.mediaMovil - hace7.mediaMovil;
+    tendencia = Math.abs(dif) < 0.05 ? 'estable' : dif > 0 ? 'al alza' : 'a la baja';
+  }
+
   return (
     <>
       <div className="leyenda" aria-hidden="true">
-        <span><i style={{ background: tema['series-1'] }} />{NOMBRE_TIPO.POSIBLE_FRAUDE}</span>
-        <span><i style={{ background: tema['series-2'] }} />{NOMBRE_TIPO.EXCESO_FRANJA_HORARIA}</span>
+        <span><i style={{ background: tema['series-1'] }} />Anomalías por día</span>
+        <span><i style={{ background: `repeating-linear-gradient(90deg, ${tema['text-2']} 0 4px, transparent 4px 7px)` }} />Tendencia (media móvil 7 días)</span>
+        <span><i className="cuadro" style={{ background: tema['series-1'], borderRadius: '50%', outline: `2px solid ${tema.surface}` }} />Pico repentino</span>
       </div>
-      <div style={{ width: '100%', height: 260 }} role="img" aria-label="Evolución diaria de anomalías por tipo">
+      <div style={{ width: '100%', height: 260 }} role="img" aria-label="Evolución diaria de anomalías con tendencia y picos">
         <ResponsiveContainer>
-          <LineChart data={serie} margin={{ top: 8, right: 16, bottom: 0, left: -12 }}>
+          <LineChart data={datos} margin={{ top: 10, right: 16, bottom: 0, left: -12 }}>
             <CartesianGrid stroke={tema.border} strokeOpacity={0.6} vertical={false} />
             <XAxis dataKey="dia" tickFormatter={diaCorto} {...eje} minTickGap={18} />
             <YAxis allowDecimals={false} {...eje} axisLine={false} width={44} />
-            <Tooltip content={<TooltipSimple titulo={(l) => `Día ${diaCorto(l)}`} />} cursor={{ stroke: tema.muted, strokeDasharray: '3 3' }} />
-            <Line type="linear" dataKey="posibleFraude" name={NOMBRE_TIPO.POSIBLE_FRAUDE} stroke={tema['series-1']} strokeWidth={2} dot={false} isAnimationActive={false} activeDot={{ r: 5, stroke: tema.surface, strokeWidth: 2 }} />
-            <Line type="linear" dataKey="excesoFranja" name={NOMBRE_TIPO.EXCESO_FRANJA_HORARIA} stroke={tema['series-2']} strokeWidth={2} dot={false} isAnimationActive={false} activeDot={{ r: 5, stroke: tema.surface, strokeWidth: 2 }} />
+            <Tooltip
+              content={<TooltipSimple titulo={(l, p) => `Día ${diaCorto(l)}${p[0]?.payload.pico ? ' · pico repentino' : ''}`} />}
+              cursor={{ stroke: tema.muted, strokeDasharray: '3 3' }}
+            />
+            <Line type="linear" dataKey="mediaMovil" name="Media móvil 7 días" stroke={tema['text-2']} strokeWidth={1.5} strokeDasharray="4 3" dot={false} isAnimationActive={false} activeDot={false} />
+            <Line type="linear" dataKey="total" name="Anomalías" stroke={tema['series-1']} strokeWidth={2} dot={PuntoPico} isAnimationActive={false} activeDot={{ r: 5, stroke: tema.surface, strokeWidth: 2 }} />
           </LineChart>
         </ResponsiveContainer>
       </div>
-      <Tabla columnas={[{ k: 'dia', t: 'Día' }, { k: 'posibleFraude', t: 'Posible fraude', num: true }, { k: 'excesoFranja', t: 'Exceso franja', num: true }, { k: 'total', t: 'Total', num: true }]} filas={serie} />
+      <p className="nota-grafica">
+        {tendencia && <>Tendencia <b>{tendencia}</b>: media de {fmtNum(ultimo.mediaMovil)} anomalías/día en los últimos 7 días (antes {fmtNum(hace7.mediaMovil)}). </>}
+        {picos.length
+          ? <>Picos repentinos: {picos.slice(-5).map((p) => `${diaCorto(p.dia)} (${p.total})`).join(', ')}{picos.length > 5 ? ` y ${picos.length - 5} más` : ''}.</>
+          : 'Sin picos repentinos.'}
+        <span className="muted"> Pico = 3 o más anomalías y al menos el doble del promedio de los 7 días anteriores.</span>
+      </p>
+      <Tabla
+        columnas={[
+          { k: 'dia', t: 'Día' }, { k: 'total', t: 'Anomalías', num: true },
+          { k: 'mediaMovil', t: 'Media 7 días', num: true, f: fmtNum }, { k: 'pico', t: 'Pico', f: (v) => (v ? 'Sí' : '') },
+        ]}
+        filas={datos}
+      />
     </>
   );
 }
 
-/** Mapa de calor día de la semana × hora: intensidad = cantidad de anomalías. */
+function franjasPorHora(franjas) {
+  const deHora = (h) => {
+    const s = h * 3600 + 1800;
+    return franjas.find((f) => {
+      const d = horaASegundos(f.desde);
+      const ha = horaASegundos(f.hasta);
+      return d <= ha ? s >= d && s <= ha : s >= d || s <= ha;
+    });
+  };
+  const tramos = [];
+  for (let h = 0; h < 24; h += 1) {
+    const f = deHora(h);
+    const ultimo = tramos[tramos.length - 1];
+    if (ultimo && ultimo.franja === f) ultimo.hasta = h;
+    else tramos.push({ franja: f, desde: h, hasta: h });
+  }
+  return { deHora, tramos };
+}
+
+export function GraficaPorHora({ datos, franjas, tema }) {
+  const { deHora, tramos } = franjasPorHora(franjas);
+  const filas = datos.map((d) => {
+    const f = deHora(d.hora);
+    return { ...d, franja: f ? nombreFranja(f.nombre) : '—', pct: d.transacciones ? (100 * d.anomalias) / d.transacciones : 0 };
+  });
+  const topAnomalias = [...filas].filter((d) => d.anomalias > 0).sort((a, b) => b.anomalias - a.anomalias || a.hora - b.hora).slice(0, 3);
+  const topSet = new Set(topAnomalias.map((d) => d.hora));
+  filas.forEach((d) => { d.etiquetaTop = topSet.has(d.hora) ? d.anomalias : null; });
+  const pico = [...filas].sort((a, b) => b.transacciones - a.transacciones)[0];
+  const hh = (h) => `${String(h).padStart(2, '0')}:00`;
+  const eje = { stroke: tema.border, tick: { fill: tema['text-2'], fontSize: 11 }, tickLine: false };
+  const corto = (f) => `${nombreFranja(f.nombre).split('-')[0]} · ${f.segundosVentana} s`;
+
+  const fondo = (conNombres) => tramos.flatMap((t, i) => [
+    <ReferenceArea
+      key={`a-${t.desde}`}
+      x1={t.desde - 0.5}
+      x2={t.hasta + 0.5}
+      fill={tema['surface-2']}
+      fillOpacity={t.franja && horaASegundos(t.franja.desde) > horaASegundos(t.franja.hasta) ? 1 : 0}
+      stroke="none"
+      ifOverflow="hidden"
+      label={conNombres && t.franja ? { value: corto(t.franja), position: 'insideTop', fill: tema['text-2'], fontSize: 10 } : undefined}
+    />,
+    i > 0 && <ReferenceLine key={`l-${t.desde}`} x={t.desde - 0.5} stroke={tema.muted} strokeDasharray="3 3" ifOverflow="hidden" />,
+  ]).filter(Boolean);
+  const grafica = (clave, nombre, color, etiquetas, alto) => (
+    <div style={{ width: '100%', height: alto }} role="img" aria-label={`${nombre} por hora del día`}>
+      <ResponsiveContainer>
+        <BarChart data={filas} margin={{ top: 4, right: 8, bottom: 0, left: -18 }} barCategoryGap={2}>
+          {fondo(etiquetas)}
+          <CartesianGrid stroke={tema.border} strokeOpacity={0.6} vertical={false} />
+          <XAxis type="number" dataKey="hora" domain={[-0.5, 23.5]} ticks={[0, 3, 6, 9, 12, 15, 18, 21]} tickFormatter={(h) => `${h}h`} {...eje} />
+          <YAxis allowDecimals={false} domain={[0, (max) => Math.max(1, Math.ceil(max * (etiquetas ? 1.45 : 1.1)))]} {...eje} axisLine={false} width={44} />
+          <Tooltip content={<TooltipSimple titulo={(l, p) => `${hh(l)}–${String(l).padStart(2, '0')}:59 · ${p[0]?.payload.franja}`} />} cursor={{ fill: tema['surface-2'], fillOpacity: 0.6 }} />
+          <Bar dataKey={clave} name={nombre} fill={color} radius={[4, 4, 0, 0]} maxBarSize={14} isAnimationActive={false}>
+            {etiquetas && <LabelList dataKey="etiquetaTop" position="top" fill={tema.text} fontSize={11} />}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+
+  return (
+    <>
+      <h3 className="titulo-mini"><i style={{ background: tema['series-1'] }} />Anomalías por hora</h3>
+      {grafica('anomalias', 'Anomalías', tema['series-1'], true, 150)}
+      <h3 className="titulo-mini"><i style={{ background: tema['series-2'] }} />Transacciones por hora (actividad)</h3>
+      {grafica('transacciones', 'Transacciones', tema['series-2'], false, 130)}
+      <p className="nota-grafica">
+        {topAnomalias.length
+          ? <>Horas con más anomalías: {topAnomalias.map((d) => `${hh(d.hora)} (${d.anomalias})`).join(', ')}. </>
+          : 'Sin anomalías registradas. '}
+        {pico && pico.transacciones > 0 && <>Mayor actividad: {hh(pico.hora)} con {fmtNum(pico.transacciones)} transacciones. </>}
+        <span className="muted">Fondo gris: {franjas.filter((f) => horaASegundos(f.desde) > horaASegundos(f.hasta)).map((f) => `${nombreFranja(f.nombre)} (${f.desde.slice(0, 5)}–${f.hasta.slice(0, 5)})`).join(', ') || '—'}.</span>
+      </p>
+      <Tabla
+        columnas={[
+          { k: 'hora', t: 'Hora', f: hh }, { k: 'franja', t: 'Franja' },
+          { k: 'transacciones', t: 'Transacciones', num: true }, { k: 'anomalias', t: 'Anomalías', num: true },
+          { k: 'pct', t: 'Anomalías / transacciones', num: true, f: (v) => `${fmtNum(Math.round(v * 10) / 10)} %` },
+        ]}
+        filas={filas}
+      />
+    </>
+  );
+}
+
 export function MapaCalor({ datos, tema }) {
   const [hover, setHover] = useState(null);
   const valor = new Map(datos.map((d) => [`${d.diaSemana}-${d.hora}`, d.cantidad]));
@@ -138,7 +231,6 @@ export function MapaCalor({ datos, tema }) {
   );
 }
 
-/** Barras horizontales con etiqueta de valor al final (una sola medida). */
 function BarrasHorizontales({ datos, clave, etiqueta, colorDe, tema, alto, nombreSerie, formatear = fmtNum }) {
   if (!datos.length) return <p className="vacio">Sin datos.</p>;
   const eje = { tick: { fill: tema['text-2'], fontSize: 12 }, tickLine: false, axisLine: false };
@@ -172,15 +264,22 @@ export function BarrasNivel({ datos, tema }) {
   );
 }
 
-export function BarrasTipo({ datos, tema }) {
-  const filas = ['POSIBLE_FRAUDE', 'EXCESO_FRANJA_HORARIA'].map((tipo) => ({
-    tipo, nombre: NOMBRE_TIPO[tipo], cantidad: (datos.find((d) => d.tipo === tipo) || {}).cantidad || 0,
-  }));
-  const col = { POSIBLE_FRAUDE: tema['series-1'], EXCESO_FRANJA_HORARIA: tema['series-2'] };
+export function BarrasCantidad({ datos, rafagaMayor, tema }) {
+  const filas = datos.porCantidad.map((c) => ({ ...c, etiqueta: `${c.cantidad}${c.masDe ? ' o más' : ''} transacciones` }));
+  const r = rafagaMayor;
   return (
     <>
-      <BarrasHorizontales datos={filas} clave="cantidad" etiqueta="nombre" nombreSerie="Anomalías" colorDe={(d) => col[d.tipo]} tema={tema} />
-      <Tabla columnas={[{ k: 'nombre', t: 'Tipo' }, { k: 'cantidad', t: 'Anomalías', num: true }]} filas={filas} />
+      <BarrasHorizontales datos={filas} clave="anomalias" etiqueta="etiqueta" nombreSerie="Anomalías" colorDe={() => tema['series-1']} tema={tema} />
+      {r && (
+        <p className="nota-grafica">
+          Ráfaga más grande: <b>{r.cantidad} transacciones en {r.ventanaSegundos} s</b> de {r.usuario} el {fmtFecha(r.fecha, { ms: false })}.{' '}
+          <Link to={`/anomalias/${r.anomaliaId}`}>Ver su línea de tiempo y la ventana →</Link>
+        </p>
+      )}
+      <Tabla
+        columnas={[{ k: 'etiqueta', t: 'En la ventana' }, { k: 'anomalias', t: 'Anomalías', num: true }, { k: 'usuarios', t: 'Usuarios', num: true }]}
+        filas={filas}
+      />
     </>
   );
 }

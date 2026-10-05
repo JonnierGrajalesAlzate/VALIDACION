@@ -1,23 +1,9 @@
-/**
- * Validación y conversión de fechas ISO 8601 con Luxon.
- *
- * Formato aceptado:  YYYY-MM-DDTHH:mm:ss[.S a .SSS][Z | ±HH:mm]
- *   - Milisegundos opcionales (1 a 3 dígitos).
- *   - Si NO trae zona horaria se asume TZ_NEGOCIO (America/Bogota).
- *   - Fechas imposibles (2026-02-30, 25:00:00...) se rechazan con un
- *     mensaje que dice exactamente qué parte es imposible.
- *
- * Se valida componente por componente ANTES de llamar a Luxon para dar
- * mensajes en español precisos ("febrero de 2026 tiene 28 días") en lugar
- * del genérico "unit out of range".
- */
 const { DateTime } = require('luxon');
 const env = require('../config/env');
 
 const RE_ISO = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})?$/;
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
-/** Pistas para los errores de formato más comunes. */
 function pistaFormato(texto) {
   if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(texto)) return "use la letra 'T' entre la fecha y la hora, no un espacio";
   if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) return 'falta la hora (HH:mm:ss)';
@@ -28,11 +14,6 @@ function pistaFormato(texto) {
   return 'formato esperado YYYY-MM-DDTHH:mm:ss.SSS (ej. 2026-09-23T10:30:01.120)';
 }
 
-/**
- * @param {string} texto
- * @param {string} [zona] zona a asumir si el texto no trae una
- * @returns {{ ok: true, fecha: DateTime } | { ok: false, codigo: string, mensaje: string }}
- */
 function parsearFechaIso(texto, zona = env.TZ_NEGOCIO) {
   const m = RE_ISO.exec(texto);
   if (!m) {
@@ -61,7 +42,6 @@ function parsearFechaIso(texto, zona = env.TZ_NEGOCIO) {
     if (hh > 14 || mm > 59) return { ok: false, codigo: 'FECHA_IMPOSIBLE', mensaje: `zona horaria imposible: ${tz} (rango válido -12:00 a +14:00)` };
   }
 
-  // Luxon: si el texto trae zona, la usa; si no, interpreta la hora en `zona`.
   const fecha = DateTime.fromISO(texto, { zone: zona });
   if (!fecha.isValid) {
     return { ok: false, codigo: 'FECHA_IMPOSIBLE', mensaje: `fecha inválida: ${fecha.invalidExplanation || fecha.invalidReason}` };
@@ -69,7 +49,6 @@ function parsearFechaIso(texto, zona = env.TZ_NEGOCIO) {
   return { ok: true, fecha, teniaZona: Boolean(tz) };
 }
 
-/** Formatea un instante (Date o ms) como ISO en la zona del negocio. */
 function aIsoNegocio(valor) {
   const dt = valor instanceof Date ? DateTime.fromJSDate(valor) : DateTime.fromMillis(Number(valor));
   return dt.setZone(env.TZ_NEGOCIO).toISO();

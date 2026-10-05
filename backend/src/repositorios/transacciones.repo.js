@@ -1,10 +1,6 @@
-/**
- * Acceso a la tabla transacciones. Solo SQL parametrizado.
- */
 const { consultar, enTransaccion, pool } = require('../db/pool');
 const { crearFiltros } = require('./sqlUtil');
 
-/** De la lista de ids, cuáles ya existen (para detectar duplicados). */
 async function idsExistentes(ids, cliente = pool) {
   if (!ids.length) return new Set();
   const r = await consultar(
@@ -16,11 +12,6 @@ async function idsExistentes(ids, cliente = pool) {
   return new Set(r.rows.map((f) => f.id));
 }
 
-/**
- * Transacciones ya guardadas de varios usuarios, cada uno en su propio
- * rango de fechas (las que todavía caben en la ventana del lote nuevo).
- * @param {Array<{usuarioId:number, desdeMs:number, hastaMs:number}>} rangos
- */
 async function historicoPorRangos(rangos, cliente = pool) {
   if (!rangos.length) return [];
   const r = await consultar(
@@ -40,7 +31,6 @@ async function historicoPorRangos(rangos, cliente = pool) {
   return r.rows.map((f) => ({ id: f.id, usuarioId: f.usuario_id, email: f.email, fechaMs: f.fecha_txn.getTime() }));
 }
 
-/** Inserta varias transacciones en UNA sola sentencia (unnest de arreglos). */
 async function insertarVarias(filas, cliente = pool) {
   if (!filas.length) return 0;
   const r = await consultar(
@@ -61,7 +51,6 @@ async function insertarVarias(filas, cliente = pool) {
   return r.rowCount;
 }
 
-/** Listado con filtros y paginación. */
 async function listar({ usuario, desde, hasta, estado, metodoPago, limite, pagina }) {
   const f = crearFiltros();
   if (usuario) f.agregar('u.email ILIKE ?', `%${usuario}%`);
@@ -87,7 +76,6 @@ async function listar({ usuario, desde, hasta, estado, metodoPago, limite, pagin
   return { filas: r.rows, total: r.rows[0] ? r.rows[0].total_filas : 0 };
 }
 
-/** Transacciones de un usuario en un rango (para la línea de tiempo de una anomalía). */
 async function deUsuarioEnRango(usuarioId, desde, hasta) {
   const r = await consultar(
     `SELECT t.id, t.valor, t.fecha_txn, t.estado, t.metodo_pago,
@@ -103,7 +91,6 @@ async function deUsuarioEnRango(usuarioId, desde, hasta) {
   return r.rows;
 }
 
-/** Elimina una transacción (sus anomalías se borran por ON DELETE CASCADE). */
 async function eliminar(id) {
   return enTransaccion(async (cliente) => {
     const an = await consultar('SELECT COUNT(*)::int AS n FROM anomalias WHERE transaccion_id = $1', [id], { fn: 'transacciones.eliminar' }, cliente);
