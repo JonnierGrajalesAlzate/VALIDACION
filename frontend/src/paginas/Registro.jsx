@@ -3,7 +3,7 @@ import { api } from '../api/cliente';
 import PanelResultado from '../componentes/PanelResultado';
 import { ahoraIsoLocal } from '../util/formato';
 
-const RE_FECHA = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})?$/;
+const RE_FECHA = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})?$/;
 const RE_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const METODOS_POR_DEFECTO = ['Tarjeta', 'Efectivo', 'Nequi', 'Daviplata', 'Transferencia'];
 

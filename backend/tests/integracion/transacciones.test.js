@@ -6,6 +6,12 @@ const anomaliasRepo = require('../../src/repositorios/anomalias.repo');
 const fixtures = require('../fixtures/hashes-python.json');
 const { limpiarBd, cerrarBd, restablecerReglas, pool } = require('../setup/utilBd');
 const { txn } = require('../setup/utilTxn');
+const reglas = require('../../src/config/reglas');
+
+function activarFranjas() {
+  const r = reglas.obtener();
+  reglas.actualizar({ ...r, franjasHorarias: { ...r.franjasHorarias, activo: true } });
+}
 
 const app = crearApp();
 const enviar = (cuerpo) => request(app).post('/api/transacciones').send(cuerpo);
@@ -24,12 +30,12 @@ describe('Casos de uso obligatorios', () => {
     const r = await enviar(lote);
     expect(r.status).toBe(201);
     expect(r.body.resumen).toMatchObject({ aceptadas: 3, rechazadas: 0, anomalias: 1 });
-    expect(r.body.aceptadas[2]).toMatchObject({ estado: 'ANOMALA', anomalias: [{ tipo: 'POSIBLE_FRAUDE', nivel: 'BAJO', cantidad: 3, ventanaSegundos: 10, franja: 'MANANA' }] });
+    expect(r.body.aceptadas[2]).toMatchObject({ estado: 'ANOMALA', anomalias: [{ tipo: 'POSIBLE_FRAUDE', nivel: 'BAJO', cantidad: 3, ventanaSegundos: 3, franja: null }] });
     expect(await estadoDe(lote[2].idTxn)).toBe('ANOMALA');
     expect(await estadoDe(lote[0].idTxn)).toBe('VALIDA');
     const a = (await pool.query('SELECT * FROM anomalias')).rows;
     expect(a).toHaveLength(1);
-    expect(a[0]).toMatchObject({ transaccion_id: lote[2].idTxn, cantidad_transacciones: 3, ventana_segundos: 10, tipo: 'POSIBLE_FRAUDE' });
+    expect(a[0]).toMatchObject({ transaccion_id: lote[2].idTxn, cantidad_transacciones: 3, ventana_segundos: 3, tipo: 'POSIBLE_FRAUDE' });
   });
 
   test('Caso 1 enviado de a una transacción por petición → también detecta la anomalía', async () => {
@@ -46,6 +52,19 @@ describe('Casos de uso obligatorios', () => {
     expect(r.status).toBe(201);
     expect(r.body.resumen.anomalias).toBe(0);
     expect(await contar('anomalias')).toBe(0);
+  });
+
+  test('Diapositiva: b@b.com 10:00:01, :05, :09 → NORMAL (no se concentran en 3 s)', async () => {
+    const r = await enviar(['10:00:01', '10:00:05', '10:00:09'].map((h) => txn({ user: 'b@b.com', date: `2026-09-23T${h}` })));
+    expect(r.status).toBe(201);
+    expect(r.body.resumen.anomalias).toBe(0);
+  });
+
+  test('Enunciado: a@a.com 10:30:01 $50.000, :02 $30.000, :03 $20.000 → POSIBLE_FRAUDE', async () => {
+    const r = await enviar([['10:30:01', 50000], ['10:30:02', 30000], ['10:30:03', 20000]]
+      .map(([h, value]) => txn({ user: 'a@a.com', date: `2026-09-23T${h}`, value })));
+    expect(r.body.resumen.anomalias).toBe(1);
+    expect(r.body.aceptadas[2].anomalias[0]).toMatchObject({ tipo: 'POSIBLE_FRAUDE', cantidad: 3, ventanaSegundos: 3 });
   });
 
   test('Caso 3: tres usuarios distintos a las 10:00:01, :02, :03 → NORMAL', async () => {
@@ -79,9 +98,16 @@ describe('Errores de validación (uno por tipo)', () => {
     expect(r.body.errores[0]).toMatchObject({ campo: 'paymentMethod', codigo: 'CAMPO_FALTANTE' });
   });
 
-  test('campo extra', async () => {
+  test('campo extra firmado (ip) → se acepta, no se guarda y queda como advertencia', async () => {
+    const r = await enviar(txn({ ip: '192.168.1.10' }));
+    expect(r.status).toBe(201);
+    expect(r.body.aceptadas[0].advertencias).toEqual([expect.objectContaining({ codigo: 'CAMPOS_ADICIONALES_IGNORADOS' })]);
+  });
+
+  test('campo extra agregado DESPUÉS de firmar → HASH_INVALIDO', async () => {
     const r = await enviar({ ...txn(), descuento: 5 });
-    expect(r.body.errores[0]).toMatchObject({ campo: 'descuento', codigo: 'CAMPO_NO_PERMITIDO' });
+    expect(r.status).toBe(422);
+    expect(r.body.errores[0]).toMatchObject({ campo: 'hash', codigo: 'HASH_INVALIDO' });
   });
 
   test('correo inválido', async () => {
@@ -131,7 +157,7 @@ describe('Errores de validación (uno por tipo)', () => {
   test('todos los errores de una transacción juntos', async () => {
     const r = await enviar({ idTxn: '1', user: 'x', date: '2026-13-01T00:00:00', value: 0, paymentMethod: 'Bitcoin', hash: 'zz', extra: true });
     expect(r.status).toBe(422);
-    expect(r.body.errores.map((e) => e.campo).sort()).toEqual(['date', 'extra', 'hash', 'idTxn', 'paymentMethod', 'user', 'value']);
+    expect(r.body.errores.map((e) => e.campo).sort()).toEqual(['date', 'hash', 'idTxn', 'paymentMethod', 'user', 'value']);
   });
 });
 
@@ -149,9 +175,72 @@ describe('Recepción y parseo', () => {
     expect(r.body.errores[0].codigo).toBe('CUERPO_VACIO');
   });
 
-  test('Content-Type distinto de JSON → 415', async () => {
-    const r = await request(app).post('/api/transacciones').set('Content-Type', 'text/plain').send('{"a":1}');
-    expect(r.status).toBe(415);
+  test.each(['text/plain', 'application/x-www-form-urlencoded'])('Content-Type %s → el cuerpo se interpreta igual como JSON', async (tipo) => {
+    const t = txn();
+    const r = await request(app).post('/api/transacciones').set('Content-Type', tipo).send(JSON.stringify(t));
+    expect(r.status).toBe(201);
+    expect(r.body.resumen.aceptadas).toBe(1);
+  });
+
+  test('Content-Type text/plain con texto que no es JSON → 400 JSON_MALFORMADO', async () => {
+    const r = await request(app).post('/api/transacciones').set('Content-Type', 'text/plain').send('idTxn=1&user=a');
+    expect(r.status).toBe(400);
+    expect(r.body.errores[0].codigo).toBe('JSON_MALFORMADO');
+  });
+
+  test('Bot en Python: campos extra, json.dumps() sin ordenar, montos con muchos decimales, isoformat() e idTxn float → 201', async () => {
+    // Generado con Python 3 y la llave de pruebas:
+    //   a["hash"] = hmac(json.dumps(a))                 (sin sort_keys ni separators)
+    //   b["hash"] = hmac(json.dumps(b, sort_keys=True)) (separadores por defecto)
+    const lote = '[{"idTxn": 82001, "user": "bot@correo.com", "date": "2026-09-23T10:30:01.120000", "value": 12345.678912, "paymentMethod": "nequi", "ip": "192.168.1.10", "estado": "APROBADA", "hash": "025f5288b31d753fa5c52e76afb3a1531d2396badbd246e2dab1df9b5e7c33d6"}, '
+      + '{"idTxn": 82002.0, "user": "bot@correo.com", "date": "2026-09-23 18:00:00", "value": 50000.0, "paymentMethod": "Tarjeta", "hash": "195a3d716752919ccc0502dc84fbee928e42e13db549351cd375617c5566552d"}]';
+    const r = await request(app).post('/api/transacciones').set('Content-Type', 'application/json').send(lote);
+    expect(r.status).toBe(201);
+    expect(r.body.resumen).toMatchObject({ aceptadas: 2, rechazadas: 0 });
+    const codigos = (i) => r.body.aceptadas[i].advertencias.map((a) => a.codigo).sort();
+    expect(codigos(0)).toEqual(['CAMPOS_ADICIONALES_IGNORADOS', 'HASH_SERIALIZACION_ALTERNATIVA', 'METODO_PAGO_NORMALIZADO', 'VALOR_REDONDEADO']);
+    expect(codigos(1)).toEqual(['ENTERO_ESCRITO_COMO_DECIMAL', 'HASH_SERIALIZACION_ALTERNATIVA']);
+    const filas = (await pool.query('SELECT id, valor, metodo_pago, fecha_txn FROM transacciones ORDER BY id')).rows;
+    expect(filas.map((f) => [Number(f.id), f.valor, f.metodo_pago])).toEqual([[82001, 12345.68, 'Nequi'], [82002, 50000, 'Tarjeta']]);
+    expect(filas[0].fecha_txn.toISOString()).toBe('2026-09-23T15:30:01.120Z');
+  });
+
+  test('modo "auto" (por defecto): SHA-256 sin llave y campos concatenados con HMAC → 201 con advertencia', async () => {
+    const crypto = require('crypto');
+    const { mensajeAFirmar } = require('../../src/hashing');
+    const sinLlave = txn();
+    sinLlave.hash = crypto.createHash('sha256').update(mensajeAFirmar(sinLlave)).digest('hex');
+    const concatenada = txn();
+    const texto = ['idTxn', 'user', 'date', 'value', 'paymentMethod'].map((k) => String(concatenada[k])).join('|');
+    concatenada.hash = crypto.createHmac('sha256', process.env.HMAC_SECRET).update(texto).digest('hex');
+    const r = await enviar([sinLlave, concatenada]);
+    expect(r.status).toBe(201);
+    expect(r.body.aceptadas.map((a) => a.advertencias[0].codigo)).toEqual(['HASH_SERIALIZACION_ALTERNATIVA', 'HASH_SERIALIZACION_ALTERNATIVA']);
+  });
+
+  test('modo "hmac" (estricto): SHA-256 sin llave → 422 con la causa exacta', async () => {
+    const r0 = reglas.obtener();
+    reglas.actualizar({ ...r0, hash: { modo: 'hmac' } });
+    const { mensajeAFirmar } = require('../../src/hashing');
+    const t = txn();
+    const r = await enviar({ ...t, hash: require('crypto').createHash('sha256').update(mensajeAFirmar(t)).digest('hex') });
+    expect(r.status).toBe(422);
+    expect(r.body.errores[0]).toMatchObject({ campo: 'hash', codigo: 'HASH_INVALIDO' });
+    expect(r.body.errores[0].mensaje).toContain('SHA-256 sin llave');
+  });
+
+  test('métodos de pago del bot del profesor (Apple Pay, Paypal, Google Pay) → 201', async () => {
+    const r = await enviar(['Apple Pay', 'PayPal', 'google pay'].map((m, i) => txn({ paymentMethod: m, date: `2026-09-23T1${i}:00:00` })));
+    expect(r.status).toBe(201);
+    expect(r.body.aceptadas.map((a) => a.metodoPago)).toEqual(['Apple Pay', 'Paypal', 'Google Pay']);
+  });
+
+  test('la compatibilidad no deja pasar un hash firmado con otra llave ni tipos incorrectos', async () => {
+    const otraLlave = { ...txn(), hash: 'f'.repeat(64) };
+    const texto = txn({ value: '50000' });
+    const r = await enviar([otraLlave, texto]);
+    expect(r.status).toBe(422);
+    expect(r.body.errores.map((e) => `${e.campo}:${e.codigo}`).sort()).toEqual(['hash:HASH_INVALIDO', 'value:TIPO_INVALIDO']);
   });
 
   test('lote vacío [] → 422', async () => {
@@ -222,7 +311,9 @@ describe('Lotes', () => {
   });
 });
 
-describe('Límites de la ventana vía API', () => {
+describe('Límites de la ventana vía API (franjas activadas)', () => {
+  beforeEach(activarFranjas);
+
   test('noche (ventana 3 s): justo 3.000 s → ANOMALÍA; 3.001 s → NORMAL', async () => {
     const dentro = ['00.000', '01.500', '03.000'].map((s) => txn({ user: 'l1@l.com', date: `2026-09-23T22:00:${s}` }));
     const fuera = ['00.000', '01.500', '03.001'].map((s) => txn({ user: 'l2@l.com', date: `2026-09-23T22:00:${s}` }));

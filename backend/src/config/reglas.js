@@ -59,7 +59,7 @@ const esquemaReglas = z.strictObject({
     }),
   metodosPago: z.array(z.string().trim().min(1).max(30, 'máximo 30 caracteres (columna metodo_pago VARCHAR(30))')).min(1),
   hash: z.strictObject({
-    modo: z.enum(['hmac', 'sha256']),
+    modo: z.enum(['hmac', 'sha256', 'auto']),
   }),
   lote: z.strictObject({
     maxTransacciones: z.int().min(1).max(10000),

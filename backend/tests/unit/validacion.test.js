@@ -35,9 +35,11 @@ describe('Tipos (sin coerción)', () => {
     expect(r.idTxn).toBeNull();
   });
 
-  test('idTxn escrito 10001.0 → rechazado (no es entero literal)', () => {
-    const r = deTexto('{"idTxn":10001.0,"user":"aa@aa.com","date":"2026-09-23T10:30:01","value":5,"paymentMethod":"Tarjeta","hash":"' + HASH + '"}');
-    expect(error(r, 'idTxn')).toMatchObject({ codigo: 'TIPO_INVALIDO', recibido: '10001.0' });
+  test.each([['10001.0', 10001], ['1e4', 10000]])('idTxn escrito %s → aceptado como %d, con advertencia', (texto, id) => {
+    const r = deTexto(`{"idTxn":${texto},"user":"aa@aa.com","date":"2026-09-23T10:30:01","value":5,"paymentMethod":"Tarjeta","hash":"${HASH}"}`);
+    expect(r.ok).toBe(true);
+    expect(r.datos.idTxn).toBe(id);
+    expect(r.datos.advertencias[0].codigo).toBe('ENTERO_ESCRITO_COMO_DECIMAL');
   });
 
   test('idTxn decimal 1.5, negativo y cero', () => {
@@ -51,10 +53,32 @@ describe('Tipos (sin coerción)', () => {
     ['negativo', -100, 'VALOR_FUERA_DE_RANGO'],
     ['cero', 0, 'VALOR_FUERA_DE_RANGO'],
     ['booleano', true, 'TIPO_INVALIDO'],
-    ['3 decimales', 10.123, 'FORMATO_INVALIDO'],
+    ['que redondeado queda en 0', 0.001, 'VALOR_FUERA_DE_RANGO'],
     ['demasiado grande', 1e13, 'VALOR_FUERA_DE_RANGO'],
   ])('value %s → %s', (_n, valor, codigo) => {
     expect(error(validar({ ...valida(), value: valor }), 'value').codigo).toBe(codigo);
+  });
+
+  test('user con más de 64 caracteres antes de @ → VALOR_FUERA_DE_RANGO (usuarios.nombre VARCHAR(120))', () => {
+    expect(validar({ ...valida(), user: `${'a'.repeat(64)}@aa.com` }).ok).toBe(true);
+    const e = error(validar({ ...valida(), user: `${'a'.repeat(65)}@aa.com` }), 'user');
+    expect(e).toMatchObject({ codigo: 'VALOR_FUERA_DE_RANGO' });
+    expect(e.mensaje).toContain('máximo es 64');
+  });
+
+  test.each([
+    ['10.123', 10.12], ['1.005', 1.01], ['12345.678912', 12345.68], ['0.015', 0.02],
+  ])('value %s con más de 2 decimales → se redondea a %d (como NUMERIC(14,2))', (texto, esperado) => {
+    const r = deTexto(`{"idTxn":1,"user":"aa@aa.com","date":"2026-09-23T10:30:01","value":${texto},"paymentMethod":"Tarjeta","hash":"${HASH}"}`);
+    expect(r.ok).toBe(true);
+    expect(r.datos.valor).toBe(esperado);
+    expect(r.datos.advertencias[0].codigo).toBe('VALOR_REDONDEADO');
+  });
+
+  test.each(['nequi', 'NEQUI', ' Nequi ', 'Néqui'])('paymentMethod %p → se guarda como "Nequi"', (m) => {
+    const r = validar({ ...valida(), paymentMethod: m });
+    expect(r.ok).toBe(true);
+    expect(r.datos.metodoPago).toBe('Nequi');
   });
 
   test('value "NaN"/"Infinity" como string → TIPO_INVALIDO', () => {
@@ -75,14 +99,15 @@ describe('Campos', () => {
     expect(error(r, 'hash')).toMatchObject({ codigo: 'CAMPO_FALTANTE', tipoRecibido: 'ausente' });
   });
 
-  test('campo extra → CAMPO_NO_PERMITIDO', () => {
-    const r = validar({ ...valida(), descuento: 10 });
-    expect(error(r, 'descuento')).toMatchObject({ codigo: 'CAMPO_NO_PERMITIDO', recibido: 10 });
+  test('campos extra (ip, estado) → se aceptan con advertencia', () => {
+    const r = validar({ ...valida(), ip: '10.0.0.1', estado: 'APROBADA' });
+    expect(r.ok).toBe(true);
+    expect(r.datos.advertencias).toEqual([expect.objectContaining({ codigo: 'CAMPOS_ADICIONALES_IGNORADOS' })]);
   });
 
   test('devuelve TODOS los errores juntos, no solo el primero', () => {
     const r = validar({ idTxn: '1', user: 'no-es-correo', date: '2026-02-30T10:00:00', value: -5, paymentMethod: 'Bitcoin', hash: 'xyz', otro: 1 });
-    expect(r.errores.map((e) => e.campo).sort()).toEqual(['date', 'hash', 'idTxn', 'otro', 'paymentMethod', 'user', 'value']);
+    expect(r.errores.map((e) => e.campo).sort()).toEqual(['date', 'hash', 'idTxn', 'paymentMethod', 'user', 'value']);
   });
 
   test('el elemento no es un objeto → TIPO_INVALIDO con su posición', () => {
@@ -118,10 +143,10 @@ describe('Fechas', () => {
     ['2026-13-01T10:00:00', 'FECHA_IMPOSIBLE', 'mes 13'],
     ['2026-09-23T24:00:00', 'FECHA_IMPOSIBLE', 'hora imposible'],
     ['2026-09-23T10:60:00', 'FECHA_IMPOSIBLE', 'minuto imposible'],
-    ['2026-09-23 10:00:00', 'FORMATO_INVALIDO', "letra 'T'"],
     ['2026-09-23', 'FORMATO_INVALIDO', 'falta la hora'],
     ['23/09/2026 10:00', 'FORMATO_INVALIDO', 'año-mes-día'],
-    ['2026-09-23T10:00:00.1234', 'FORMATO_INVALIDO', 'máximo 3 decimales'],
+    ['2026-09-23T10:00:00.1234567890', 'FORMATO_INVALIDO', 'máximo 9 decimales'],
+    ['2026-09-31 10:00:00', 'FECHA_IMPOSIBLE', 'septiembre de 2026 tiene 30 días'],
   ])('%s → %s', (fecha, codigo, texto) => {
     const e = error(validar({ ...valida(), date: fecha }), 'date');
     expect(e.codigo).toBe(codigo);
@@ -136,6 +161,13 @@ describe('Fechas', () => {
   test('sin zona → America/Bogota; milisegundos opcionales (1 a 3 dígitos)', () => {
     expect(parsearFechaIso('2026-09-23T10:00:00').fecha.toMillis()).toBe(Date.UTC(2026, 8, 23, 15));
     expect(parsearFechaIso('2026-09-23T10:00:00.5').fecha.toMillis()).toBe(Date.UTC(2026, 8, 23, 15, 0, 0, 500));
+  });
+
+  test('formatos de Python: isoformat() con microsegundos y str(datetime) con espacio (se trunca a ms)', () => {
+    const esperado = Date.UTC(2026, 8, 23, 15, 30, 1, 120);
+    expect(parsearFechaIso('2026-09-23T10:30:01.120999').fecha.toMillis()).toBe(esperado);
+    expect(parsearFechaIso('2026-09-23 10:30:01.120000').fecha.toMillis()).toBe(esperado);
+    expect(validar({ ...valida(), date: '2026-09-23T10:30:01.120000' }).ok).toBe(true);
   });
 
   test('date como número → TIPO_INVALIDO', () => {

@@ -1,11 +1,13 @@
 const { DateTime } = require('luxon');
 const env = require('../config/env');
 
-const RE_ISO = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})?$/;
+// Formato de la guía: 2026-09-23T10:30:01.120. Por compatibilidad con clientes en Python también se acepta
+// un espacio en lugar de 'T' (str(datetime)) y hasta 9 decimales (datetime.isoformat() usa 6): se truncan a ms.
+const RE_ISO = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})?$/;
+const MAX_DECIMALES = 9;
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
 function pistaFormato(texto) {
-  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(texto)) return "use la letra 'T' entre la fecha y la hora, no un espacio";
   if (/^\d{4}-\d{2}-\d{2}$/.test(texto)) return 'falta la hora (HH:mm:ss)';
   if (/^\d{2}[/-]\d{2}[/-]\d{4}/.test(texto)) return 'el orden debe ser año-mes-día (YYYY-MM-DD)';
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(texto)) return 'faltan los segundos (HH:mm:ss)';
@@ -24,8 +26,8 @@ function parsearFechaIso(texto, zona = env.TZ_NEGOCIO) {
   const nMes = Number(mes);
   const dia = Number(d);
 
-  if (frac !== undefined && frac.length > 3) {
-    return { ok: false, codigo: 'FORMATO_INVALIDO', mensaje: `la fecha admite máximo 3 decimales en los segundos (milisegundos); se recibieron ${frac.length}` };
+  if (frac !== undefined && frac.length > MAX_DECIMALES) {
+    return { ok: false, codigo: 'FORMATO_INVALIDO', mensaje: `la fecha admite máximo ${MAX_DECIMALES} decimales en los segundos; se recibieron ${frac.length}` };
   }
   if (nMes < 1 || nMes > 12) {
     return { ok: false, codigo: 'FECHA_IMPOSIBLE', mensaje: `fecha imposible: el mes ${mes} no existe (debe estar entre 01 y 12)` };
@@ -42,7 +44,9 @@ function parsearFechaIso(texto, zona = env.TZ_NEGOCIO) {
     if (hh > 14 || mm > 59) return { ok: false, codigo: 'FECHA_IMPOSIBLE', mensaje: `zona horaria imposible: ${tz} (rango válido -12:00 a +14:00)` };
   }
 
-  const fecha = DateTime.fromISO(texto, { zone: zona });
+  // Forma normalizada para Luxon: siempre con 'T' y con los decimales truncados a milisegundos.
+  const normalizada = `${a}-${mes}-${d}T${h}:${min}:${s}${frac !== undefined ? `.${frac.slice(0, 3)}` : ''}${tz || ''}`;
+  const fecha = DateTime.fromISO(normalizada, { zone: zona });
   if (!fecha.isValid) {
     return { ok: false, codigo: 'FECHA_IMPOSIBLE', mensaje: `fecha inválida: ${fecha.invalidExplanation || fecha.invalidReason}` };
   }

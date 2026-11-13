@@ -2,8 +2,10 @@ const { detectarAnomalias, simularVentana, rangoHistorico, ColaVentana } = requi
 const { obtenerFranja, ventanaPara } = require('../../src/ventana/franjas');
 const reglas = require('../../src/config/reglas');
 
-const BASE = reglas.obtener();
-const SIN_FRANJAS = { ...BASE, franjasHorarias: { ...BASE.franjasHorarias, activo: false } };
+// reglas.json trae las franjas apagadas por defecto: aquí se encienden para probarlas.
+const CONFIG = reglas.obtener();
+const BASE = { ...CONFIG, franjasHorarias: { ...CONFIG.franjasHorarias, activo: true } };
+const SIN_FRANJAS = { ...CONFIG, franjasHorarias: { ...CONFIG.franjasHorarias, activo: false } };
 
 const ms = (local) => Date.parse(`${local}-05:00`);
 let siguienteId = 1;

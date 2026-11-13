@@ -1,10 +1,10 @@
 {
   "ventanaDeslizante": {
     "segundos": 3,
-    "umbral": 2
+    "umbral": 3
   },
   "franjasHorarias": {
-    "activo": true,
+    "activo": false,
     "franjas": [
       {
         "nombre": "MANANA",
@@ -35,12 +35,15 @@
     "Efectivo",
     "Nequi",
     "Daviplata",
-    "Transferencia"
+    "Transferencia",
+    "Apple Pay",
+    "Paypal",
+    "Google Pay"
   ],
   "hash": {
-    "modo": "hmac"
+    "modo": "auto"
   },
   "lote": {
-    "maxTransacciones": 1000
+    "maxTransacciones": 10000
   }
 }

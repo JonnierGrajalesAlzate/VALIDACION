@@ -164,6 +164,8 @@ Todas las opciones están en la cabecera de `scripts/generar-datos.js`.
 | GET | `/api/health` | Estado del servidor y de PostgreSQL |
 | POST | `/api/dev/calcular-hash` | **Solo `NODE_ENV=development`**: hash correcto y cadena firmada |
 
+**Compatibilidad con bots.** Los tipos se validan estrictamente (`"50000"` entre comillas se rechaza), pero se aceptan formatos legítimos que un bot produce: campos adicionales firmados (`ip`, `estado`), `idTxn` como `10001.0`, montos con más de 2 decimales (se redondean), `nequi`/`TARJETA`, fechas de `datetime.isoformat()` o `str(datetime)`, el hash firmado con `json.dumps()`/`JSON.stringify()` y lotes de hasta 10 000. Cada ajuste aparece en `aceptadas[i].advertencias`. Detalle en `DECISIONES.md` §3.14 y §4.8.
+
 **Estructura de error** (siempre la misma):
 
 ```json
@@ -182,7 +184,6 @@ Todas las opciones están en la cabecera de `scripts/generar-datos.js`.
 | 207 | Lote mixto |
 | 400 | JSON malformado |
 | 409 | Duplicado |
-| 415 | `Content-Type` incorrecto |
 | 422 | Validación, hash o usuario inactivo |
 | 404 | No encontrado |
 | 500 / 503 | Errores reales del servidor o de la BD |
@@ -207,7 +208,18 @@ Para encontrar todos los logs de una petición, busque su `requestId` en `app.lo
 
 ## 8. Cómo funciona la ventana deslizante
 
-El tamaño de la ventana depende de la **hora en que ocurre la transacción** (configurable en `reglas.json → franjasHorarias`):
+**Regla por defecto (la del enunciado):** 3 o más transacciones del mismo usuario dentro de **3 segundos** → `POSIBLE_FRAUDE`. Se configura en `reglas.json → ventanaDeslizante` (`segundos: 3`, `umbral: 3`). Con esta regla salen exactamente los ejemplos de las diapositivas:
+
+| Ejemplo | Resultado |
+|---|---|
+| `a@a.com` 10:30:01, :02, :03 | `POSIBLE_FRAUDE` en la tercera |
+| `b@b.com` 10:00:01, :02, :03 | `POSIBLE_FRAUDE` en la tercera |
+| `b@b.com` 10:00:01, :05, :09 | Normal (no se concentran en 3 s) |
+| Usuario 1, 2 y 3 a las 10:00:01, :02, :03 | Normal (cada usuario tiene su propia ventana) |
+
+Para comprobarlo contra la API: `python peticiones/casos_enunciado.py`.
+
+**Franjas horarias (opcional, apagadas por defecto).** Al activarlas (`franjasHorarias.activo = true`, desde la página *Configuración* o con `PUT /api/config`), el tamaño de la ventana pasa a depender de la **hora en que ocurre la transacción**:
 
 | Franja | Horario | Ventana |
 |---|---|---|

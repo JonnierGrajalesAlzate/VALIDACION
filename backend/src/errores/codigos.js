@@ -1,7 +1,6 @@
 const CODIGOS = Object.freeze({
   JSON_MALFORMADO: { http: 400 },
   CUERPO_VACIO: { http: 400 },
-  CONTENT_TYPE_INVALIDO: { http: 415 },
   CUERPO_DEMASIADO_GRANDE: { http: 413 },
   CAMPO_FALTANTE: { http: 422 },
   CAMPO_NO_PERMITIDO: { http: 422 },

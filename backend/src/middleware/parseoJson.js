@@ -7,7 +7,7 @@ const { crearLogger } = require('../logging/logger');
 const { parsearJsonConservandoNumeros } = require('../validacion/jsonCrudo');
 
 const log = crearLogger(__filename);
-const LIMITE = '5mb';
+const LIMITE = '25mb';
 const METODOS_CON_CUERPO = new Set(['POST', 'PUT', 'PATCH']);
 
 const leerCrudo = express.raw({ type: () => true, limit: LIMITE });
@@ -39,18 +39,12 @@ function parseoJson(req, res, next) {
       }));
     }
 
+    // El cuerpo se interpreta como JSON sin importar el Content-Type: Postman ("raw → Text"),
+    // requests.post(url, data=json.dumps(...)) y curl -d no envían "application/json".
+    // Si el texto no es JSON válido, se responde 400 JSON_MALFORMADO con la posición exacta.
     const tipo = req.get('Content-Type') || '';
     if (!/^application\/(.+\+)?json\b/i.test(tipo)) {
-      return next(new ErrorApp({
-        etapa: ETAPAS.RECEPCION,
-        codigo: 'CONTENT_TYPE_INVALIDO',
-        mensaje: `La cabecera Content-Type debe ser "application/json"; se recibió "${tipo || '(ninguna)'}".`,
-        errores: [{
-          idTxn: null, campo: 'Content-Type', codigo: 'CONTENT_TYPE_INVALIDO',
-          mensaje: `La cabecera Content-Type debe ser "application/json"; se recibió "${tipo || '(ninguna)'}".`,
-          recibido: tipo || null, esperado: 'application/json',
-        }],
-      }));
+      log.info({ fn: 'parseoJson', contentType: tipo || '(ninguna)' }, 'Content-Type distinto de application/json: el cuerpo se interpreta igual como JSON');
     }
 
     try {

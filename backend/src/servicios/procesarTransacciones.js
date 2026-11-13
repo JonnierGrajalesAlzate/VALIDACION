@@ -67,10 +67,17 @@ async function procesarTransacciones(cuerpo, { requestId }) {
   establecerEtapa(ETAPAS.VALIDACION_HASH);
   validas = validas.filter((d) => {
     const v = verificarHash(d.original);
-    if (v.valido) return true;
+    if (v.valido) {
+      if (!v.esCanonica) {
+        d.advertencias.push({ campo: 'hash', codigo: 'HASH_SERIALIZACION_ALTERNATIVA', mensaje: `el hash es válido, pero se firmó con ${v.variante} en lugar de HMAC-SHA256 sobre json.dumps(sort_keys=True, separators=(",", ":"))` });
+        log.info({ fn: 'verificarHash', idTxn: d.idTxn, variante: v.variante }, `VALIDACION_HASH: idTxn=${d.idTxn} hash válido con serialización alternativa (${v.variante})`);
+      }
+      return true;
+    }
     log.warn(
-      { fn: 'verificarHash', idTxn: d.idTxn, modo: v.modo, recibido: v.recibido, esperado: v.esperado },
-      `VALIDACION_HASH: idTxn=${d.idTxn} hash no coincide. Recibido=${abreviar(v.recibido)}, Esperado=${abreviar(v.esperado)}`,
+      // Se registra la transacción completa tal como llegó (no contiene la llave) para poder diagnosticar después.
+      { fn: 'verificarHash', idTxn: d.idTxn, modo: v.modo, recibido: v.recibido, esperado: v.esperado, pista: v.pista, transaccion: JSON.stringify(d.original) },
+      `VALIDACION_HASH: idTxn=${d.idTxn} hash no coincide. Recibido=${abreviar(v.recibido)}, Esperado=${abreviar(v.esperado)}. ${v.pista}`,
     );
     log.debug({ fn: 'verificarHash', idTxn: d.idTxn, cadenaFirmada: v.cadena }, `VALIDACION_HASH: cadena exacta que se firmó para idTxn=${d.idTxn}`);
     rechazar(d.posicion, d.idTxn, ETAPAS.VALIDACION_HASH, [crearDetalle({
@@ -78,7 +85,7 @@ async function procesarTransacciones(cuerpo, { requestId }) {
       posicion: d.posicion,
       campo: 'hash',
       codigo: 'HASH_INVALIDO',
-      mensaje: `hash no coincide con el ${v.modo === 'hmac' ? 'HMAC-SHA256' : 'SHA-256'} de la transacción: algún campo fue modificado o la llave (HMAC_SECRET) es distinta`,
+      mensaje: `hash no coincide con el ${v.modo === 'hmac' ? 'HMAC-SHA256' : 'SHA-256'} de la transacción: ${v.pista}`,
       recibido: v.recibido,
       tipoRecibido: 'string',
       esperado: env.NODE_ENV === 'development' ? v.esperado : `${v.modo === 'hmac' ? 'HMAC-SHA256' : 'SHA-256'} de la transacción sin el campo hash (claves ordenadas, sin espacios)`,
@@ -189,6 +196,7 @@ async function procesarTransacciones(cuerpo, { requestId }) {
             valor: d.valor,
             metodoPago: d.metodoPago,
             estado: r.estado,
+            advertencias: d.advertencias,
             anomalias: r.anomalias.map((a) => ({ id: idAnomalia.get(`${d.idTxn}|${a.tipo}`), ...a })),
             ventana: r.traza,
           };

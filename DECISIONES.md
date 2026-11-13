@@ -36,19 +36,39 @@ Archivos clave:
 
 ## 3. Validación
 
+### 3.0 Contrato de tipos (guía → base de datos)
+
+Cada campo debe llegar con el **tipo JSON** de la guía. No hay conversión de tipos: `"50000"` (texto) no es `50000` (número) y se rechaza.
+Lo que sí se hace es **normalizar formatos** que un bot puede producir de forma legítima con ese mismo tipo (ver §3.14); cada ajuste se informa en `advertencias`.
+
+| Campo JSON | Tipo JSON exigido | Ejemplo de la guía | Reglas | Columna destino |
+|---|---|---|---|---|
+| `idTxn` | número **entero** (sin comillas; `10001.0` se toma como `10001`) | `10001` | 1 … 9007199254740991 | `transacciones.id BIGINT` |
+| `user` | texto | `"aa@aa.com"` | correo válido, ≤ 254 caracteres, ≤ 64 antes de `@`; se guarda en minúsculas | `usuarios.email VARCHAR(254)` / `usuarios.nombre VARCHAR(120)` |
+| `date` | texto | `"2026-09-23T10:30:01.120"` | `YYYY-MM-DD[T\| ]HH:mm:ss[.f…][Z\|±HH:mm]`, fecha real | `transacciones.fecha_txn TIMESTAMPTZ` |
+| `value` | número (sin comillas) | `50000` | > 0 y ≤ 999999999999.99; con más de 2 decimales se redondea a 2 | `transacciones.valor NUMERIC(14,2)` |
+| `paymentMethod` | texto | `"Tarjeta"` | uno de `reglas.json → metodosPago` (sin distinguir mayúsculas ni tildes), ≤ 30 caracteres | `transacciones.metodo_pago VARCHAR(30)` |
+| `hash` | texto | `"ec37a3a3…"` | 64 caracteres hexadecimales y HMAC-SHA256 correcto (§4.8) | `transacciones.hash CHAR(64)` |
+
+Cualquier otro tipo (`null`, booleano, arreglo, objeto, número entre comillas) → `TIPO_INVALIDO`. Campo ausente → `CAMPO_FALTANTE`. Campos adicionales (p. ej. `ip`, `estado`, que el contexto menciona) → se aceptan y se ignoran al guardar, pero forman parte del hash.
+
+
 | # | Tema | Decisión |
 |---|------|----------|
-| 3.1 | Formato de `date` | `YYYY-MM-DDTHH:mm:ss[.S…SSS][Z\|±HH:mm]`. Exige la letra `T` y de 1 a 3 decimales en los segundos. Más de 3 (microsegundos, como produce `datetime.isoformat()` de Python) se rechaza con un mensaje explícito |
+| 3.1 | Formato de `date` | El de la guía (`2026-09-23T10:30:01.120`). También se acepta un espacio en lugar de `T` (`str(datetime)` de Python) y hasta 9 decimales (`datetime.isoformat()` usa 6); se **truncan a milisegundos**. El hash se calcula con el texto original |
 | 3.2 | Fecha sin zona horaria | Se asume `TZ_NEGOCIO` (`America/Bogota`, UTC−5, sin horario de verano) |
 | 3.3 | Fechas futuras o muy antiguas | **Se aceptan** (el enunciado no las prohíbe). Si se quisieran limitar, se agrega una regla en `validacion/fechas.js` |
-| 3.4 | `idTxn` escrito `10001.0` o `1e4` | **Rechazado**: no es un entero literal. Se detecta leyendo el texto original del JSON |
+| 3.4 | `idTxn` escrito `10001.0` o `1e4` | **Aceptado** como `10001` / `10000` (es el mismo entero; así lo escriben Python con floats y pandas), con advertencia `ENTERO_ESCRITO_COMO_DECIMAL`. `10001.5` y `"10001"` se rechazan |
 | 3.5 | `idTxn` máximo | `9007199254740991` (2^53−1). Por encima, JavaScript ya no lo representa exacto |
-| 3.6 | `value` con más de 2 decimales | **Rechazado** (no se redondea en silencio). La columna es `NUMERIC(14,2)`; máximo `999999999999.99` |
-| 3.7 | `paymentMethod` | Coincidencia **exacta**, distingue mayúsculas: `tarjeta` ≠ `Tarjeta`. Lista en `reglas.json → metodosPago` |
+| 3.6 | `value` con más de 2 decimales | Se **redondea** a 2 decimales (mitad hacia arriba, como `NUMERIC(14,2)`: `1.005` → `1.01`), con advertencia `VALOR_REDONDEADO`. Si redondeado queda en 0 o pasa de `999999999999.99` → `VALOR_FUERA_DE_RANGO` |
+| 3.7 | `paymentMethod` | Sin distinguir mayúsculas, tildes ni espacios: `nequi`, `NEQUI`, ` Nequi ` → se guarda `Nequi`, con advertencia `METODO_PAGO_NORMALIZADO`. Un método que no está en `reglas.json → metodosPago` se rechaza. La lista incluye `Apple Pay`, `Paypal` y `Google Pay`, que usó el bot del profesor el 09/10/2026 |
 | 3.8 | Orden de las validaciones | El hash se verifica **solo si el esquema pasó**: sin campos válidos, la cadena firmada no tiene sentido. Dentro del esquema se reportan **todos** los errores juntos (un error por campo) |
 | 3.9 | Claves repetidas en el JSON (`{"value":1,"value":2}`) | Se usa la última, igual que `JSON.parse` y `json.loads` de Python. No se detecta como error |
-| 3.10 | Tamaño de lote | Máximo `lote.maxTransacciones` (1000); cuerpo máximo 5 MB |
+| 3.10 | Tamaño de lote | Máximo `lote.maxTransacciones` (**10000**); cuerpo máximo 25 MB. 5000 transacciones se procesan en ~2,5 s |
 | 3.11 | `idTxn` repetido dentro del mismo lote | Se procesa la **primera** aparición; las siguientes se rechazan con `DUPLICADO_EN_LOTE` |
+| 3.12 | Parte del correo antes de `@` | Máximo **64** caracteres (RFC 5321). Se guarda como `usuarios.nombre VARCHAR(120)`; sin este límite un correo largo rompía el `INSERT` y se perdía todo el lote |
+| 3.13 | `Content-Type` | No es un tipo de dato: el cuerpo se lee como JSON aunque llegue como `text/plain` o sin cabecera. Los **campos** sí se validan estrictamente (tabla 3.0) |
+| 3.14 | Compatibilidad con bots | Las normalizaciones de 3.1, 3.4, 3.6, 3.7 y los campos adicionales nunca cambian el **tipo** de un dato ni saltan el hash. Cada transacción aceptada trae `advertencias: [{ campo, codigo, mensaje }]` con lo que se ajustó. Comprobación: `python peticiones/prueba_bot.py` |
 
 ## 4. Hash
 
@@ -56,10 +76,12 @@ Archivos clave:
 |---|------|----------|
 | 4.1 | Mensaje firmado | La transacción sin `hash`, igual que `json.dumps(datos, sort_keys=True, separators=(",", ":"))` de Python: claves ordenadas, sin espacios, no ASCII como `\uXXXX` |
 | 4.2 | Números | Se reproduce exactamente a Python. Un literal entero (`50000`) se escribe como entero; un literal con `.` o `e` (`50000.0`) se escribe como float de Python (`repr`: `50000.0`, `1e-05`, `1e+16`). Para eso se conserva el texto original de cada número con `JSON.parse` + `context.source` (Node ≥ 21). Probado contra 410 floats y 7 casos generados con Python |
-| 4.3 | Modos | `hash.modo = "hmac"` (por defecto): HMAC-SHA256 con `HMAC_SECRET`. `"sha256"`: SHA-256 simple del mensaje, **sin llave** |
+| 4.3 | Modos | `hash.modo = "auto"` (**por defecto**): acepta cualquier combinación de §4.8, con o sin llave, para ser compatible con el bot del profesor. `"hmac"`: solo algoritmos con la llave `HMAC_SECRET` (lo que pide la guía). `"sha256"`: solo SHA-256 sin llave. Se cambia en *Configuración* o con `PUT /api/config` |
 | 4.4 | Mayúsculas en el hash recibido | Se aceptan; se comparan en minúsculas con `crypto.timingSafeEqual` |
 | 4.5 | Hash esperado en la respuesta | **Solo en `NODE_ENV=development`.** Fuera de desarrollo la API no lo devuelve: sería un "oráculo" que firma cualquier transacción inventada. Siempre queda en el log (recibido y esperado) |
 | 4.6 | Cadena firmada en el log | Solo con `LOG_LEVEL=debug`, como pide el enunciado |
+| 4.8 | Formas de firmar aceptadas al verificar | **Mensaje**: `json.dumps(sort_keys=True, separators=(",", ":"))` (la guía), `json.dumps(sort_keys=True)`, `json.dumps(separators=…)`, `json.dumps()`, `JSON.stringify()` (con y sin claves ordenadas) y los 5 campos de la guía concatenados (`idTxn{sep}user{sep}date{sep}value{sep}paymentMethod`, con `sep` = vacío, `\|`, `,`, `;`, `:`, espacio, `-`, `_`). **Algoritmo**: HMAC-SHA256 con la llave, SHA-256(mensaje + llave), SHA-256(llave + mensaje) y, en modo `auto`, SHA-256 sin llave. Un campo modificado después de firmar o un hash inventado no coincide con ninguna combinación y se rechaza. Si no se usó la forma de la guía, la respuesta trae la advertencia `HASH_SERIALIZACION_ALTERNATIVA` con la forma detectada. **Por qué**: el 09/10/2026 el bot del profesor usó la llave correcta y aun así sus 36 transacciones bien formadas fallaron el hash: firmaba de otra forma |
+| 4.9 | Diagnóstico de un hash rechazado | Si el hash corresponde a un algoritmo que el modo actual no admite (p. ej. SHA-256 sin llave en modo `hmac`), el mensaje lo dice y sugiere el modo `auto`. El log guarda la transacción recibida completa (`transaccion=`) para poder revisar cómo firmó el cliente |
 | 4.7 | `/api/dev/calcular-hash` | Solo se registra con `NODE_ENV=development` (en otro caso responde 404). Firma cualquier objeto sin validar sus tipos, para poder armar pruebas de "tipo incorrecto con hash correcto" |
 
 ## 5. Ventana deslizante (`POSIBLE_FRAUDE`)
@@ -79,6 +101,8 @@ Archivos clave:
 
 El enunciado pide que el **tamaño de la ventana** dependa de la hora en que llega la transacción (configurable). Se configura en `reglas.json → franjasHorarias`.
 
+> **Apagadas por defecto** (`franjasHorarias.activo = false`). Las diapositivas fijan la regla del ejercicio en "3 o más transacciones dentro de 3 segundos" y dan como **normal** `b@b.com` 10:00:01, 10:00:05, 10:00:09. Con la franja de la mañana (10 s) esas tres caben en 8 s y saldrían como anomalía, contradiciendo el ejemplo. Por eso la configuración entregada usa la regla base (3 s, umbral 3), con la que coinciden todos los ejemplos, y las franjas quedan implementadas y probadas para activarlas desde *Configuración* o `PUT /api/config`.
+
 > Corrección: una versión anterior leyó "venta de 10" (errata de **ventana**) como "hasta 10 ventas por franja" y generaba una anomalía aparte, `EXCESO_FRANJA_HORARIA`. Esa regla se eliminó: las franjas solo deciden el tamaño de la ventana de `POSIBLE_FRAUDE`.
 
 | Franja | Horario | `segundosVentana` |
@@ -91,11 +115,11 @@ El enunciado pide que el **tamaño de la ventana** dependa de la hora en que lle
 |---|------|----------|
 | 6.1 | Unidad | "Ventana de 10" = **10 segundos**, la misma unidad de la ventana de 3 s del enunciado. El umbral sigue siendo 3 transacciones a cualquier hora |
 | 6.2 | Qué hora decide la ventana | La de la transacción **que entra**. Ej.: a las 05:00:03 (mañana, 10 s) cuentan las de 04:59:55 en adelante aunque esas fueran de la noche; a las 20:00:03 (noche, 3 s) ya no cuentan las de 19:59:58 |
-| 6.3 | Ejemplo del enunciado "10:00:01, 10:00:05, 10:00:09 → NORMAL" | Ese ejemplo supone una ventana de 3 s. Con la ventana de la mañana (10 s) las tres caben en 8 s y es **ANOMALÍA**; en la noche (3 s) sigue siendo NORMAL. Los casos obligatorios 1, 2 y 3 dan el mismo resultado con 10 s |
+| 6.3 | Ejemplo del enunciado "10:00:01, 10:00:05, 10:00:09 → NORMAL" | Ese ejemplo supone una ventana de 3 s: con la configuración por defecto (franjas apagadas) es **NORMAL**, como dice el enunciado. Si se activan las franjas, en la mañana (10 s) las tres caben en 8 s y pasa a ser **ANOMALÍA**; en la noche (3 s) sigue siendo NORMAL |
 | 6.4 | Milisegundos entre franjas | La hora se **trunca al segundo**: 12:00:00.500 se lee como 12:00:00 y cae en MAÑANA, igual que en un reloj. Así las franjas "05:00:01 → 12:00:00" no dejan huecos |
 | 6.5 | Zona horaria | Las franjas se evalúan en hora de Bogotá, no en UTC |
 | 6.6 | Validación de la configuración | Las franjas deben cubrir las 24 h **sin huecos ni solapes**; si no, `PUT /api/config` responde 422 con el detalle |
-| 6.7 | Desactivar | `franjasHorarias.activo = false` → se usa la ventana fija `ventanaDeslizante.segundos` (3 s) a cualquier hora |
+| 6.7 | Activar / desactivar | Por defecto `franjasHorarias.activo = false` → ventana fija `ventanaDeslizante.segundos` (3 s) a cualquier hora. Con `true` se usa la ventana de cada franja |
 | 6.8 | Base de datos | No se cambió el esquema: el CHECK de `anomalias.tipo` todavía admite `EXCESO_FRANJA_HORARIA`, pero la API ya no lo genera. Quitarlo exigiría una migración |
 
 ## 7. Niveles BAJO / MEDIO / ALTO
@@ -119,7 +143,7 @@ Se configura en `reglas.json → niveles` (`medioDesdeExcedente`, `altoDesdeExce
 | Nada aceptado y todos los errores son duplicados | 409 |
 | Nada aceptado por validación, hash o usuario inactivo | 422 |
 | JSON malformado / cuerpo vacío | 400 |
-| `Content-Type` distinto de JSON | 415 |
+| `Content-Type` distinto de JSON (Postman *raw → Text*, `requests.post(data=...)`, `curl -d`) | **Se acepta**: el cuerpo se interpreta como JSON igual. Si no es JSON válido → 400 |
 | Recurso inexistente | 404 |
 | Error de BD o fallo de persistencia (con `ROLLBACK`) | 500 (503 si no hay conexión) |
 
